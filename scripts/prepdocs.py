@@ -226,7 +226,7 @@ def before_retry_sleep(retry_state):
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
 def compute_embedding(text):
-    return openai.Embedding.create(engine=args.openaideployment, input=text)["data"][0]["embedding"]
+    return openai.Embedding.create(input=text, model="text-embedding-ada-002")["data"][0]["embedding"]
 
 def create_search_index():
     if args.verbose: print(f"Ensuring search index {args.index} exists")
@@ -318,10 +318,8 @@ if __name__ == "__main__":
     parser.add_argument("--searchservice", help="Name of the Azure Cognitive Search service where content should be indexed (must exist already)")
     parser.add_argument("--index", help="Name of the Azure Cognitive Search index where content should be indexed (will be created if it doesn't exist)")
     parser.add_argument("--searchkey", required=False, help="Optional. Use this Azure Cognitive Search account key instead of the current user identity to login (use az login to set current user for Azure)")
-    parser.add_argument("--openaiservice", help="Name of the Azure OpenAI service used to compute embeddings")
-    parser.add_argument("--openaideployment", help="Name of the Azure OpenAI model deployment for an embedding model ('text-embedding-ada-002' recommended)")
     parser.add_argument("--novectors", action="store_true", help="Don't compute embeddings for the sections (e.g. don't call the OpenAI embeddings API during indexing)")
-    parser.add_argument("--openaikey", required=False, help="Optional. Use this Azure OpenAI account key instead of the current user identity to login (use az login to set current user for Azure)")
+    parser.add_argument("--openaiapikey", required=False, help="Required. OpenAI API key")
     parser.add_argument("--remove", action="store_true", help="Remove references to this document from blob storage and the search index")
     parser.add_argument("--removeall", action="store_true", help="Remove all blobs from blob storage and documents from the search index")
     parser.add_argument("--localpdfparser", action="store_true", help="Use PyPdf local PDF parser (supports only digital PDFs) instead of Azure Form Recognizer service to extract text, tables and layout from the documents")
@@ -345,16 +343,9 @@ if __name__ == "__main__":
             exit(1)
         formrecognizer_creds = default_creds if args.formrecognizerkey == None else AzureKeyCredential(args.formrecognizerkey)
 
+    ### Comment out all things related to Azure OpenAI service
     if use_vectors:
-        if args.openaikey == None:
-            openai.api_key = azd_credential.get_token("https://cognitiveservices.azure.com/.default").token
-            openai.api_type = "azure_ad"
-        else:
-            openai.api_type = "azure"
-            openai.api_key = args.openaikey
-
-        openai.api_base = f"https://{args.openaiservice}.openai.azure.com"
-        openai.api_version = "2022-12-01"
+        openai.api_key = args.openaiapikey
 
     if args.removeall:
         remove_blobs(None)
