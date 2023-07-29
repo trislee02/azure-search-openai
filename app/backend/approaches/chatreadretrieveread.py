@@ -48,13 +48,12 @@ If you cannot generate a search query, return just the number 0.
         {'role' : ASSISTANT, 'content' : 'Health plan cardio coverage' }
     ]
 
-    def __init__(self, search_client: SearchClient, chatgpt_deployment: str, chatgpt_model: str, embedding_deployment: str, sourcepage_field: str, content_field: str):
+    def __init__(self, search_client: SearchClient, chatgpt_model: str, embed_model: str, sourcepage_field: str, content_field: str):
         self.search_client = search_client
-        self.chatgpt_deployment = chatgpt_deployment
-        self.chatgpt_model = chatgpt_model
-        self.embedding_deployment = embedding_deployment
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
+        self.embed_model = embed_model
+        self.chatgpt_model = chatgpt_model
         self.chatgpt_token_limit = get_token_limit(chatgpt_model)
 
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
@@ -78,7 +77,6 @@ If you cannot generate a search query, return just the number 0.
             )
 
         chat_completion = openai.ChatCompletion.create(
-            deployment_id=self.chatgpt_deployment,
             model=self.chatgpt_model,
             messages=messages, 
             temperature=0.0, 
@@ -93,7 +91,7 @@ If you cannot generate a search query, return just the number 0.
 
         # If retrieval mode includes vectors, compute an embedding for the query
         if has_vector:
-            query_vector = openai.Embedding.create(engine=self.embedding_deployment, input=query_text)["data"][0]["embedding"]
+            query_vector = openai.Embedding.create(input=query_text, model=self.embed_model)["data"][0]["embedding"]
         else:
             query_vector = None
 
@@ -148,7 +146,6 @@ If you cannot generate a search query, return just the number 0.
             max_tokens=self.chatgpt_token_limit)
 
         chat_completion = openai.ChatCompletion.create(
-            deployment_id=self.chatgpt_deployment,
             model=self.chatgpt_model,
             messages=messages, 
             temperature=overrides.get("temperature") or 0.7, 

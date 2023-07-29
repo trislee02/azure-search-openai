@@ -227,7 +227,7 @@ def before_retry_sleep(retry_state):
 # @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
 @retry(wait=wait_fixed(60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
 def compute_embedding(text):
-    embed = openai.Embedding.create(input=text, model="text-embedding-ada-002")["data"][0]["embedding"]
+    embed = openai.Embedding.create(input=text, model=args.openaiembedmodel)["data"][0]["embedding"]
     if embed and args.verbose: print("Successfully embedded")
     return embed
 
@@ -322,7 +322,8 @@ if __name__ == "__main__":
     parser.add_argument("--index", help="Name of the Azure Cognitive Search index where content should be indexed (will be created if it doesn't exist)")
     parser.add_argument("--searchkey", required=False, help="Optional. Use this Azure Cognitive Search account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--novectors", action="store_true", help="Don't compute embeddings for the sections (e.g. don't call the OpenAI embeddings API during indexing)")
-    parser.add_argument("--openaiapikey", required=False, help="Required. OpenAI API key")
+    parser.add_argument("--openaiapikey", help="Required. OpenAI API key")
+    parser.add_argument("--openaiembedmodel", help="Required. OpenAI API Embedding model name")
     parser.add_argument("--remove", action="store_true", help="Remove references to this document from blob storage and the search index")
     parser.add_argument("--removeall", action="store_true", help="Remove all blobs from blob storage and documents from the search index")
     parser.add_argument("--localpdfparser", action="store_true", help="Use PyPdf local PDF parser (supports only digital PDFs) instead of Azure Form Recognizer service to extract text, tables and layout from the documents")
