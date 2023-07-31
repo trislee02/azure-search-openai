@@ -23,6 +23,7 @@ KB_FIELDS_CONTENT = os.environ.get("KB_FIELDS_CONTENT") or "content"
 KB_FIELDS_CATEGORY = os.environ.get("KB_FIELDS_CATEGORY") or "category"
 KB_FIELDS_SOURCEPAGE = os.environ.get("KB_FIELDS_SOURCEPAGE") or "sourcepage"
 
+# Add these azd environment in Configuration section of the App service on Azure Portal
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY") or ""
 OPENAI_GPT_MODEL = os.environ.get("OPENAI_GPT_MODEL") or "gpt-3.5-turbo"
 OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL") or "text-embedding-ada-002"
