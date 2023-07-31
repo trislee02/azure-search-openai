@@ -3,7 +3,7 @@ import re
 from approaches.approach import Approach
 from azure.search.documents import SearchClient
 from azure.search.documents.models import QueryType
-from langchain.llms.openai import AzureOpenAI
+from langchain.llms import OpenAI
 from langchain.prompts import PromptTemplate, BasePromptTemplate
 from langchain.callbacks.manager import CallbackManager
 from langchain.agents import Tool, AgentExecutor
@@ -13,10 +13,10 @@ from text import nonewlines
 from typing import Any, List, Optional
 
 class ReadDecomposeAsk(Approach):
-    def __init__(self, search_client: SearchClient, openai_deployment: str, embedding_deployment: str, sourcepage_field: str, content_field: str):
+    def __init__(self, search_client: SearchClient, chatgpt_model: str, embed_model: str, sourcepage_field: str, content_field: str):
         self.search_client = search_client
-        self.openai_deployment = openai_deployment
-        self.embedding_deployment = embedding_deployment
+        self.embed_model = embed_model
+        self.chatgpt_model = chatgpt_model
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
 
@@ -30,7 +30,7 @@ class ReadDecomposeAsk(Approach):
 
         # If retrieval mode includes vectors, compute an embedding for the query
         if has_vector:
-            query_vector = openai.Embedding.create(engine=self.embedding_deployment, input=query_text)["data"][0]["embedding"]
+            query_vector = openai.Embedding.create(model=self.embed_model, input=query_text)["data"][0]["embedding"]
         else:
             query_vector = None
 
@@ -89,7 +89,7 @@ class ReadDecomposeAsk(Approach):
         cb_handler = HtmlCallbackHandler()
         cb_manager = CallbackManager(handlers=[cb_handler])
 
-        llm = AzureOpenAI(deployment_name=self.openai_deployment, temperature=overrides.get("temperature") or 0.3, openai_api_key=openai.api_key)
+        llm = OpenAI(temperature=overrides.get("temperature") or 0.3, openai_api_key=openai.api_key)
         tools = [
             Tool(name="Search", func=lambda q: self.search(q, overrides), description="useful for when you need to ask with search", callbacks=cb_manager),
             Tool(name="Lookup", func=self.lookup, description="useful for when you need to ask with lookup", callbacks=cb_manager)

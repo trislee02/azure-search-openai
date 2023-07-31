@@ -10,6 +10,8 @@ from text import nonewlines
 from core.messagebuilder import MessageBuilder
 from core.modelhelper import get_token_limit
 
+from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
+
 class ChatReadRetrieveReadApproach(Approach):
     # Chat roles
     SYSTEM = "system"
@@ -56,6 +58,19 @@ If you cannot generate a search query, return just the number 0.
         self.chatgpt_model = chatgpt_model
         self.chatgpt_token_limit = get_token_limit(chatgpt_model)
 
+    def before_retry_sleep(retry_state):
+        print(f"Rate limited on the OpenAI API, sleeping 60s before retrying...")
+
+    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+    def __compute_chat_completion(self, messages, temperature, max_tokens, n):
+        completion = openai.ChatCompletion.create(
+            model=self.chatgpt_model,
+            messages=messages, 
+            temperature=temperature, 
+            max_tokens=max_tokens, 
+            n=n)
+        return completion
+
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
         has_text = overrides.get("retrieval_mode") in ["text", "hybrid", None]
         has_vector = overrides.get("retrieval_mode") in ["vectors", "hybrid", None]
@@ -76,13 +91,8 @@ If you cannot generate a search query, return just the number 0.
             self.chatgpt_token_limit - len(user_q)
             )
 
-        chat_completion = openai.ChatCompletion.create(
-            model=self.chatgpt_model,
-            messages=messages, 
-            temperature=0.0, 
-            max_tokens=32, 
-            n=1)
-        
+        chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.0, max_tokens=32, n=1)
+                
         query_text = chat_completion.choices[0].message.content
         if query_text.strip() == "0":
             query_text = history[-1]["user"] # Use the last user input if we failed to generate a better query
@@ -145,13 +155,11 @@ If you cannot generate a search query, return just the number 0.
             history[-1]["user"],
             max_tokens=self.chatgpt_token_limit)
 
-        chat_completion = openai.ChatCompletion.create(
-            model=self.chatgpt_model,
-            messages=messages, 
-            temperature=overrides.get("temperature") or 0.7, 
-            max_tokens=1024, 
-            n=1)
-
+        chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                         temperature=overrides.get("temperature") or 0.7, 
+                                                         max_tokens=1024, 
+                                                         n=1)
+        
         chat_content = chat_completion.choices[0].message.content
 
         msg_to_display = '\n\n'.join([str(message) for message in messages])

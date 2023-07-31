@@ -323,7 +323,7 @@ if __name__ == "__main__":
     parser.add_argument("--searchkey", required=False, help="Optional. Use this Azure Cognitive Search account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--novectors", action="store_true", help="Don't compute embeddings for the sections (e.g. don't call the OpenAI embeddings API during indexing)")
     parser.add_argument("--openaiapikey", help="Required. OpenAI API key")
-    parser.add_argument("--openaiembedmodel", help="Required. OpenAI API Embedding model name")
+    parser.add_argument("--openaiembedmodel", default='text-embedding-ada-002', help="Required. OpenAI API Embedding model name")
     parser.add_argument("--remove", action="store_true", help="Remove references to this document from blob storage and the search index")
     parser.add_argument("--removeall", action="store_true", help="Remove all blobs from blob storage and documents from the search index")
     parser.add_argument("--localpdfparser", action="store_true", help="Use PyPdf local PDF parser (supports only digital PDFs) instead of Azure Form Recognizer service to extract text, tables and layout from the documents")

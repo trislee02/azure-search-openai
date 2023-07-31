@@ -49,8 +49,8 @@ blob_container = blob_client.get_container_client(AZURE_STORAGE_CONTAINER)
 # or some derivative, here we include several for exploration purposes
 ask_approaches = {
     "rtr": RetrieveThenReadApproach(search_client, OPENAI_GPT_MODEL, OPENAI_EMBED_MODEL, KB_FIELDS_SOURCEPAGE, KB_FIELDS_CONTENT),
-    # "rrr": ReadRetrieveReadApproach(search_client, AZURE_OPENAI_GPT_DEPLOYMENT, AZURE_OPENAI_EMB_DEPLOYMENT, KB_FIELDS_SOURCEPAGE, KB_FIELDS_CONTENT),
-    # "rda": ReadDecomposeAsk(search_client, AZURE_OPENAI_GPT_DEPLOYMENT, AZURE_OPENAI_EMB_DEPLOYMENT, KB_FIELDS_SOURCEPAGE, KB_FIELDS_CONTENT)
+    "rrr": ReadRetrieveReadApproach(search_client, OPENAI_GPT_MODEL, OPENAI_EMBED_MODEL, KB_FIELDS_SOURCEPAGE, KB_FIELDS_CONTENT),
+    "rda": ReadDecomposeAsk(search_client, OPENAI_GPT_MODEL, OPENAI_EMBED_MODEL, KB_FIELDS_SOURCEPAGE, KB_FIELDS_CONTENT)
 }
 
 chat_approaches = {
