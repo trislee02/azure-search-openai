@@ -63,7 +63,6 @@ def upload_blobs(filename):
     else:
         blob_name = blob_name_from_file_page(filename)
         with open(filename,"rb") as data:
-            if args.verbose: print(f"\tUploading blob for file {filename} -> {blob_name}")
             blob_container.upload_blob(blob_name, data, overwrite=True)
 
 def remove_blobs(filename):
@@ -98,55 +97,48 @@ def table_to_html(table):
 def get_document_text(filename):
     offset = 0
     page_map = []
-    if os.path.splitext(filename)[1].lower() == ".pdf":
-        if args.localpdfparser:
-            reader = PdfReader(filename)
-            pages = reader.pages
-            for page_num, p in enumerate(pages):
-                page_text = p.extract_text()
-                page_map.append((page_num, offset, page_text))
-                offset += len(page_text)
-        else:
-            if args.verbose: print(f"Extracting text from '{filename}' using Azure Form Recognizer")
-            form_recognizer_client = DocumentAnalysisClient(endpoint=f"https://{args.formrecognizerservice}.cognitiveservices.azure.com/", credential=formrecognizer_creds, headers={"x-ms-useragent": "azure-search-chat-demo/1.0.0"})
-            with open(filename, "rb") as f:
-                poller = form_recognizer_client.begin_analyze_document("prebuilt-layout", document = f)
-            form_recognizer_results = poller.result()
-
-            for page_num, page in enumerate(form_recognizer_results.pages):
-                tables_on_page = [table for table in form_recognizer_results.tables if table.bounding_regions[0].page_number == page_num + 1]
-
-                # mark all positions of the table spans in the page
-                page_offset = page.spans[0].offset
-                page_length = page.spans[0].length
-                table_chars = [-1]*page_length
-                for table_id, table in enumerate(tables_on_page):
-                    for span in table.spans:
-                        # replace all table spans with "table_id" in table_chars array
-                        for i in range(span.length):
-                            idx = span.offset - page_offset + i
-                            if idx >=0 and idx < page_length:
-                                table_chars[idx] = table_id
-
-                # build page text by replacing charcters in table spans with table html
-                page_text = ""
-                added_tables = set()
-                for idx, table_id in enumerate(table_chars):
-                    if table_id == -1:
-                        page_text += form_recognizer_results.content[page_offset + idx]
-                    elif not table_id in added_tables:
-                        page_text += table_to_html(tables_on_page[table_id])
-                        added_tables.add(table_id)
-
-                page_text += " "
-                page_map.append((page_num, offset, page_text))
-                offset += len(page_text)
-
-    elif os.path.splitext(filename)[1].lower() == ".md":
+    if args.localpdfparser:
+        reader = PdfReader(filename)
+        pages = reader.pages
+        for page_num, p in enumerate(pages):
+            page_text = p.extract_text()
+            page_map.append((page_num, offset, page_text))
+            offset += len(page_text)
+    else:
+        if args.verbose: print(f"Extracting text from '{filename}' using Azure Form Recognizer")
+        form_recognizer_client = DocumentAnalysisClient(endpoint=f"https://{args.formrecognizerservice}.cognitiveservices.azure.com/", credential=formrecognizer_creds, headers={"x-ms-useragent": "azure-search-chat-demo/1.0.0"})
         with open(filename, "rb") as f:
-            content = str(f.read())
-            page_map.append((0, offset, content))
+            poller = form_recognizer_client.begin_analyze_document("prebuilt-layout", document = f)
+        form_recognizer_results = poller.result()
 
+        for page_num, page in enumerate(form_recognizer_results.pages):
+            tables_on_page = [table for table in form_recognizer_results.tables if table.bounding_regions[0].page_number == page_num + 1]
+
+            # mark all positions of the table spans in the page
+            page_offset = page.spans[0].offset
+            page_length = page.spans[0].length
+            table_chars = [-1]*page_length
+            for table_id, table in enumerate(tables_on_page):
+                for span in table.spans:
+                    # replace all table spans with "table_id" in table_chars array
+                    for i in range(span.length):
+                        idx = span.offset - page_offset + i
+                        if idx >=0 and idx < page_length:
+                            table_chars[idx] = table_id
+
+            # build page text by replacing charcters in table spans with table html
+            page_text = ""
+            added_tables = set()
+            for idx, table_id in enumerate(table_chars):
+                if table_id == -1:
+                    page_text += form_recognizer_results.content[page_offset + idx]
+                elif not table_id in added_tables:
+                    page_text += table_to_html(tables_on_page[table_id])
+                    added_tables.add(table_id)
+
+            page_text += " "
+            page_map.append((page_num, offset, page_text))
+            offset += len(page_text)
     return page_map
 
 def split_text(page_map):
@@ -215,8 +207,10 @@ def filename_to_id(filename):
     return f"file-{filename_ascii}-{filename_hash}"
 
 def create_sections(filename, page_map, use_vectors):
+    print("Creating sections...")
     file_id = filename_to_id(filename)
     for i, (content, pagenum) in enumerate(split_text(page_map)):
+        print('content:', content)
         section = {
             "id": f"{file_id}-page-{i}",
             "content": content,
@@ -224,26 +218,24 @@ def create_sections(filename, page_map, use_vectors):
             "sourcepage": blob_name_from_file_page(filename, pagenum),
             "sourcefile": filename
         }
-        if use_vectors:
-            section["embedding"] = compute_embedding(content)
+        # if use_vectors:
+        #     section["embedding"] = compute_embedding(content)
         yield section
 
 def before_retry_sleep(retry_state):
-    if args.verbose: print(f"Rate limited on the OpenAI embeddings API, sleeping before retrying...")
+    if args.verbose: print(f"Rate limited on the OpenAI embeddings API, sleeping 60s before retrying...")
 
-@retry(wait=wait_random_exponential(min=20, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+# @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+@retry(wait=wait_fixed(60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
 def compute_embedding(text):
-    # embed = openai.Embedding.create(input=text, model=args.openaiembedmodel)["data"][0]["embedding"]
-    embed = openai.Embedding.create(engine=args.openaideployment, input=text)["data"][0]["embedding"]
+    embed = openai.Embedding.create(input=text, model=args.openaiembedmodel)["data"][0]["embedding"]
     if embed and args.verbose: print("Successfully embedded")
     return embed
 
 def create_search_index():
     if args.verbose: print(f"Ensuring search index {args.index} exists")
-    print(f"search creds = {search_creds}")
     index_client = SearchIndexClient(endpoint=f"https://{args.searchservice}.search.windows.net/",
                                      credential=search_creds)
-    
     if args.index not in index_client.list_index_names():
         index = SearchIndex(
             name=args.index,
@@ -331,11 +323,8 @@ if __name__ == "__main__":
     parser.add_argument("--index", help="Name of the Azure Cognitive Search index where content should be indexed (will be created if it doesn't exist)")
     parser.add_argument("--searchkey", required=False, help="Optional. Use this Azure Cognitive Search account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--novectors", action="store_true", help="Don't compute embeddings for the sections (e.g. don't call the OpenAI embeddings API during indexing)")
-    # parser.add_argument("--openaiapikey", help="Required. OpenAI API key")
-    # parser.add_argument("--openaiembedmodel", default='text-embedding-ada-002', help="Required. OpenAI API Embedding model name")
-    parser.add_argument("--openaiservice", help="Name of the Azure OpenAI service used to compute embeddings")
-    parser.add_argument("--openaideployment", help="Name of the Azure OpenAI model deployment for an embedding model ('text-embedding-ada-002' recommended)")
-    parser.add_argument("--openaikey", required=False, help="Optional. Use this Azure OpenAI account key instead of the current user identity to login (use az login to set current user for Azure)")
+    parser.add_argument("--openaiapikey", help="Required. OpenAI API key")
+    parser.add_argument("--openaiembedmodel", default='text-embedding-ada-002', help="Required. OpenAI API Embedding model name")
     parser.add_argument("--remove", action="store_true", help="Remove references to this document from blob storage and the search index")
     parser.add_argument("--removeall", action="store_true", help="Remove all blobs from blob storage and documents from the search index")
     parser.add_argument("--localpdfparser", action="store_true", help="Use PyPdf local PDF parser (supports only digital PDFs) instead of Azure Form Recognizer service to extract text, tables and layout from the documents")
@@ -349,7 +338,7 @@ if __name__ == "__main__":
     default_creds = azd_credential if args.searchkey == None or args.storagekey == None else None
     search_creds = default_creds if args.searchkey == None else AzureKeyCredential(args.searchkey)
     use_vectors = not args.novectors
-    
+
     if not args.skipblobs:
         storage_creds = default_creds if args.storagekey == None else args.storagekey
     if not args.localpdfparser:
@@ -361,16 +350,7 @@ if __name__ == "__main__":
 
     ### Comment out all things related to Azure OpenAI service
     if use_vectors:
-        if args.openaikey == None:
-            openai.api_key = azd_credential.get_token("https://cognitiveservices.azure.com/.default").token
-            openai.api_type = "azure_ad"
-        else:
-            openai.api_type = "azure"
-            openai.api_key = args.openaikey
-
-        openai.api_base = f"https://{args.openaiservice}.openai.azure.com"
-        openai.api_version = "2022-12-01"
-        # openai.api_key = args.openaiapikey
+        openai.api_key = args.openaiapikey
 
     if args.removeall:
         remove_blobs(None)
@@ -393,4 +373,6 @@ if __name__ == "__main__":
                     upload_blobs(filename)
                 page_map = get_document_text(filename)
                 sections = create_sections(os.path.basename(filename), page_map, use_vectors)
-                index_sections(os.path.basename(filename), sections)
+                for s in sections:
+                    pass
+                #index_sections(os.path.basename(filename), sections)
