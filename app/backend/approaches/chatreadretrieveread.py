@@ -50,12 +50,21 @@ If you cannot generate a search query, return just the number 0.
         {'role' : ASSISTANT, 'content' : 'Health plan cardio coverage' }
     ]
 
-    def __init__(self, search_client: SearchClient, chatgpt_model: str, embed_model: str, sourcepage_field: str, content_field: str):
+    def __init__(self, 
+                 search_client: SearchClient, 
+                 sourcepage_field: str, 
+                 content_field: str,
+                 chatgpt_model = "", 
+                 embed_model = "", 
+                 chatgpt_deployment = "", 
+                 embedding_deployment = ""):
         self.search_client = search_client
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
         self.embed_model = embed_model
+        self.chatgpt_deployment = chatgpt_deployment
         self.chatgpt_model = chatgpt_model
+        self.embedding_deployment = embedding_deployment
         self.chatgpt_token_limit = get_token_limit(chatgpt_model)
 
     def before_retry_sleep(retry_state):
@@ -63,12 +72,23 @@ If you cannot generate a search query, return just the number 0.
 
     @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
-        completion = openai.ChatCompletion.create(
-            model=self.chatgpt_model,
-            messages=messages, 
-            temperature=temperature, 
-            max_tokens=max_tokens, 
-            n=n)
+        completion = None
+        if self.chatgpt_deployment != "":
+            completion = openai.ChatCompletion.create(
+                deployment_id=self.chatgpt_deployment,
+                model=self.chatgpt_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                n=n)
+        else:
+            completion = openai.ChatCompletion.create(
+                model=self.chatgpt_model,
+                messages=messages, 
+                temperature=temperature, 
+                max_tokens=max_tokens, 
+                n=n)
+        
         return completion
 
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
@@ -101,7 +121,10 @@ If you cannot generate a search query, return just the number 0.
 
         # If retrieval mode includes vectors, compute an embedding for the query
         if has_vector:
-            query_vector = openai.Embedding.create(input=query_text, model=self.embed_model)["data"][0]["embedding"]
+            if self.embedding_deployment != "":
+                query_vector = openai.Embedding.create(engine=self.embedding_deployment, input=query_text)["data"][0]["embedding"]                
+            else:
+                query_vector = openai.Embedding.create(input=query_text, model=self.embed_model)["data"][0]["embedding"]
         else:
             query_vector = None
 

@@ -34,11 +34,19 @@ info3.pdf: Overlake is the name of the area that includes a park and ride near B
 info4.pdf: In-network institutions include Overlake, Swedish and others in the region
 """
     answer = "In-network deductibles are $500 for employee and $1000 for family [info1.txt] and Overlake is in-network for the employee plan [info2.pdf][info4.pdf]."
-
-    def __init__(self, search_client: SearchClient, chatgpt_model: str, embed_model: str, sourcepage_field: str, content_field: str):
+    def __init__(self, 
+                 search_client: SearchClient, 
+                 sourcepage_field: str, 
+                 content_field: str, 
+                 openai_deployment = "", 
+                 embedding_deployment = "",
+                 chatgpt_model = "", 
+                 embed_model = ""):
         self.search_client = search_client
         self.chatgpt_model = chatgpt_model
         self.embed_model = embed_model
+        self.openai_deployment = openai_deployment
+        self.embedding_deployment = embedding_deployment
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
 
@@ -52,7 +60,10 @@ info4.pdf: In-network institutions include Overlake, Swedish and others in the r
 
         # If retrieval mode includes vectors, compute an embedding for the query
         if has_vector:
-            query_vector = openai.Embedding.create(input=q, model=self.embed_model)["data"][0]["embedding"]
+            if self.embedding_deployment != "":
+                query_vector = openai.Embedding.create(engine=self.embedding_deployment, input=q)["data"][0]["embedding"]
+            else:
+                query_vector = openai.Embedding.create(input=q, model=self.embed_model)["data"][0]["embedding"]
         else:
             query_vector = None
 
@@ -96,11 +107,20 @@ info4.pdf: In-network institutions include Overlake, Swedish and others in the r
         message_builder.append_message('user', self.question)
         
         messages = message_builder.messages
-        chat_completion = openai.ChatCompletion.create(
-            model=self.chatgpt_model,
-            messages=messages, 
-            temperature=overrides.get("temperature") or 0.3, 
-            max_tokens=1024, 
-            n=1)
+        if self.openai_deployment != "":
+            chat_completion = openai.ChatCompletion.create(
+                deployment_id=self.openai_deployment,
+                model=self.chatgpt_model,
+                messages=messages,
+                temperature=overrides.get("temperature") or 0.3,
+                max_tokens=1024,
+                n=1)
+        else:
+            chat_completion = openai.ChatCompletion.create(
+                model=self.chatgpt_model,
+                messages=messages, 
+                temperature=overrides.get("temperature") or 0.3, 
+                max_tokens=1024, 
+                n=1)
         
         return {"data_points": results, "answer": chat_completion.choices[0].message.content, "thoughts": f"Question:<br>{query_text}<br><br>Prompt:<br>" + '\n\n'.join([str(message) for message in messages])}

@@ -44,7 +44,14 @@ Thought: {agent_scratchpad}"""
 
     CognitiveSearchToolDescription = "useful for searching the Microsoft employee benefits information such as healthcare plans, retirement plans, etc."
 
-    def __init__(self, search_client: SearchClient, chatgpt_model: str, embed_model: str, sourcepage_field: str, content_field: str):
+    def __init__(self, 
+                 search_client: SearchClient, 
+                 sourcepage_field: str, 
+                 content_field: str,
+                 openai_deployment="", 
+                 embedding_deployment="", 
+                 chatgpt_model="", 
+                 embed_model=""):
         self.search_client = search_client
         self.embed_model = embed_model
         self.chatgpt_model = chatgpt_model
