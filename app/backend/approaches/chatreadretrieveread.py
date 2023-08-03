@@ -23,11 +23,24 @@ class ChatReadRetrieveReadApproach(Approach):
     top documents from search, then constructs a prompt with them, and then uses OpenAI to generate an completion
     (answer) with that prompt.
     """
-    system_message_chat_conversation = """Assistant helps the customers with questions regarding QTrobot SDK and code. Be brief in your answers.
-Answer ONLY with the facts listed in the list of sources below. If there isn't enough information below, say you don't know. Do not generate answers that don't use the sources below. If asking a clarifying question to the user would help, ask the question.
-For tabular information return it as an html table. Do not return markdown format. If the question is not in English, answer in the language used in the question.
-When answering a question that involves coding, you must use and modify the sample code from the sources. Make sure to cite at least one source for any code you use.
-Each source has a name followed by colon and the actual information, always include the source name for each fact you use in the response. Use square brackets to reference the source, e.g. [info1.txt]. Don't combine sources, list each source separately, e.g. [info1.txt][info2.pdf].
+    system_message_chat_conversation = """You are an intelligent customer service staff of LuxAI S.A. company helping answer the customers questions.
+Be brief, concise, accurate in your answers.
+You MUST use the facts listed in the list of given sources to answer.
+Sources will be listed as the format:
+```
+[<source name 1>]: <source content 1>
+[<source name 2>]: <source content 2>
+```
+If there isn't enough information from given sources, say you don't know.
+If the question is not in English, answer in the language used in the question.
+Finally, you MUST cite sources you use to answer right at the end of that answer sentence. The citation is the exact source name wrapped in square brackets.
+Examples:
+Question: How can I make my robot speak?
+Answer: 
+```
+To make the robot speak you should follow these steps[<source name 1>]: A B C.
+The code[<source name 2>] is bla bla. 
+```
 {follow_up_questions_prompt}
 {injected_prompt}
 """
@@ -36,7 +49,7 @@ Use double angle brackets to reference the questions, e.g. <<Are there exclusion
 Try not to repeat questions that have already been asked.
 Only generate questions and do not generate any text before or after the questions, such as 'Next Questions'"""
 
-    query_prompt_template = """Below is a history of the conversation so far, and a new question asked by the user that needs to be answered by searching in a knowledge base about employee healthcare plans and the employee handbook.
+    query_prompt_template = """Below is a history of the conversation so far, and a new question asked by the user that needs to be answered by searching in a knowledge base.
 Generate a search query based on the conversation and the new question. 
 Do not include cited source filenames and document names e.g info.txt or doc.pdf in the search query terms.
 Do not include any text inside [] or <<>> in the search query terms.
@@ -45,10 +58,16 @@ If the question is not in English, translate the question to English before gene
 If you cannot generate a search query, return just the number 0.
 """
     query_prompt_few_shots = [
-        {'role' : USER, 'content' : 'What are my health plans?' },
-        {'role' : ASSISTANT, 'content' : 'Show available health plans' },
-        {'role' : USER, 'content' : 'does my plan cover cardio?' },
-        {'role' : ASSISTANT, 'content' : 'Health plan cardio coverage' }
+        {'role' : USER, 'content' : 'How can I make the robot speak?' },
+        {'role' : ASSISTANT, 'content' : "steps to make text-to-speech" },
+        {'role' : USER, 'content' : 'I want it to say "Bonjour"' },
+        {'role' : ASSISTANT, 'content' : "code text-to-speech with French" },
+        {'role' : USER, 'content' : 'How many languages do you support?' },
+        {'role' : ASSISTANT, 'content' : 'count supported text-to-speech languages' },
+        {'role' : USER, 'content' : 'Now I want it to recognize my arm movement' },
+        {'role' : ASSISTANT, 'content' : "gesture detection" },
+        {'role' : USER, 'content' : 'How many gestures can you detect?' },
+        {'role' : ASSISTANT, 'content' : 'number of gestures can be detected' },
     ]
 
     def __init__(self, 
@@ -154,9 +173,9 @@ If you cannot generate a search query, return just the number 0.
                                           top_k=50 if query_vector else None, 
                                           vector_fields="embedding" if query_vector else None)
         if use_semantic_captions:
-            results = [doc[self.sourcepage_field] + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']])) for doc in r]
+            results = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']])) for doc in r]
         else:
-            results = [doc[self.sourcepage_field] + ": " + nonewlines(doc[self.content_field]) for doc in r]
+            results = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field]) for doc in r]
         content = "\n".join(results)
 
         follow_up_questions_prompt = self.follow_up_questions_prompt_content if overrides.get("suggest_followup_questions") else ""
