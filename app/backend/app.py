@@ -6,6 +6,7 @@ import logging
 import openai
 from flask import Flask, request, jsonify, send_file, abort
 from azure.identity import DefaultAzureCredential
+from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
 from approaches.retrievethenread import RetrieveThenReadApproach
 from approaches.readretrieveread import ReadRetrieveReadApproach
@@ -31,17 +32,24 @@ OPENAI_EMBED_MODEL = os.environ.get("OPENAI_EMBED_MODEL") or "text-embedding-ada
 
 # Constants for AZURE OPENAI SERVICE
 # Add these azd environment in Configuration section of the App service on Azure Portal
+AZURE_OPENAI_KEY = os.environ.get("AZURE_OPENAI_KEY") or ""
 AZURE_OPENAI_SERVICE = os.environ.get("AZURE_OPENAI_SERVICE") or ""
 AZURE_OPENAI_GPT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_GPT_DEPLOYMENT") or ""
 AZURE_OPENAI_CHATGPT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_CHATGPT_DEPLOYMENT") or ""
 AZURE_OPENAI_CHATGPT_MODEL = os.environ.get("AZURE_OPENAI_CHATGPT_MODEL") or "gpt-3.5-turbo"
 AZURE_OPENAI_EMB_DEPLOYMENT = os.environ.get("AZURE_OPENAI_EMB_DEPLOYMENT") or ""
 
+# KEY
+AZURE_SEARCH_KEY = os.environ.get("AZURE_SEARCH_SERVICE_KEY") or ""
+AZURE_STORAGE_KEY = os.environ.get("AZURE_STORAGE_ACCOUNT_KEY") or ""
+
 # Use the current user identity to authenticate with Cognitive Search and Blob Storage (no secrets needed, 
 # just use 'az login' locally, and managed identity when deployed on Azure). If you need to use keys, use separate AzureKeyCredential instances with the 
 # keys for each service
 # If you encounter a blocking error during a DefaultAzureCredntial resolution, you can exclude the problematic credential by using a parameter (ex. exclude_shared_token_cache_credential=True)
 azure_credential = DefaultAzureCredential(exclude_shared_token_cache_credential = True)
+search_creds = azure_credential if AZURE_SEARCH_KEY == "" else AzureKeyCredential(AZURE_SEARCH_KEY)
+storage_creds = azure_credential if AZURE_STORAGE_KEY == "" else AZURE_STORAGE_KEY
 
 if OPENAI_API_KEY != "":
     openai.api_key = OPENAI_API_KEY
@@ -51,19 +59,21 @@ else:
     openai.api_base = f"https://{AZURE_OPENAI_SERVICE}.openai.azure.com"
     openai.api_version = "2023-05-15"
 
-    # Comment these two lines out if using keys, set your API key in the OPENAI_API_KEY environment variable instead
-    openai.api_type = "azure_ad"
-    openai_token = azure_credential.get_token("https://cognitiveservices.azure.com/.default")
-    openai.api_key = openai_token.token
+    if AZURE_OPENAI_KEY != "":
+        openai.api_key = AZURE_OPENAI_KEY
+    else:
+        openai.api_type = "azure_ad"
+        openai_token = azure_credential.get_token("https://cognitiveservices.azure.com/.default")
+        openai.api_key = openai_token.token
 
 # Set up clients for Cognitive Search and Storage
 search_client = SearchClient(
     endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
     index_name=AZURE_SEARCH_INDEX,
-    credential=azure_credential)
+    credential=search_creds)
 blob_client = BlobServiceClient(
     account_url=f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net", 
-    credential=azure_credential)
+    credential=storage_creds)
 blob_container = blob_client.get_container_client(AZURE_STORAGE_CONTAINER)
 
 # Various approaches to integrate GPT and external knowledge, most applications will use a single one of these patterns
