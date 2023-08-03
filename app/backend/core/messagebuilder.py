@@ -7,7 +7,7 @@ class MessageBuilder:
       Attributes:
           message (list): A list of dictionaries representing chat messages.
           model (str): The name of the ChatGPT model.
-          token_count (int): The total number of tokens in the conversation.
+          token_length (int): The total number of tokens in the conversation.
       Methods:
           __init__(self, system_content: str, chatgpt_model: str): Initializes the MessageBuilder instance.
           append_message(self, role: str, content: str, index: int = 1): Appends a new message to the conversation.
