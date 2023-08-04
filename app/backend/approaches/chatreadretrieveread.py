@@ -41,7 +41,7 @@ Answer:
 To make the robot speak you should follow these steps[<source name 1>]: A B C.
 The code[<source name 2>] is bla bla. 
 ```
-Question: Where can I buy a microphone?
+Question: Where could I buy a microphone?
 Answer: 
 ```
 I don't know
