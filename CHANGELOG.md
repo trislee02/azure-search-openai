@@ -1,7 +1,17 @@
 ## [Azure Cognitive Search - OpenAI API] Changelog
 
-<a name="Successfully replacing Azure OpenAI with OpenAI API"></a>
-# Successfully replacing Azure OpenAI with OpenAI API (2023-07-31)
+<a name="0.1.1"></a>
+# 0.1.1 (2023-08-04)
+
+*Breaking Changes*
+* Beautify code section in chat UI
+* Hard-code the link to citation. Please replace `http://localhost:5000/content/` to `/content/` after debugging
+
+*What's next*
+* Improve the bot's answer
+
+<a name="0.1.0"></a>
+# 0.1.0 (2023-07-31)
 
 *Breaking Changes*
 * Adapt OpenAI API into approaches
@@ -10,8 +20,8 @@
 *What's next*
 * Improve the bot's answer
 
-<a name="Modifying the infrastructure"></a>
-# Modifying the infrastructure (2023-07-28)
+<a name="0.0.1"></a>
+# 0.0.1 (2023-07-28)
 
 *Breaking Changes*
 * Get rid of Azure OpenAI service
