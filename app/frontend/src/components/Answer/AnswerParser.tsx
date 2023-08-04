@@ -1,4 +1,4 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { getCitationFilePath } from "../../api";
 
 type HtmlParsedAnswer = {
@@ -20,27 +20,39 @@ export function parseAnswerToHtml(answer: string, onCitationClicked: (citationFi
     // trim any whitespace from the end of the answer after removing follow-up questions
     parsedAnswer = parsedAnswer.trim();
 
-    const parts = parsedAnswer.split(/\[([^\]]+)\]/g);
+    // const parts = parsedAnswer.split(/\[([^\]]+)\]/g);
+    const parts = parsedAnswer.split(/(\[([^\]]+)\])|(```.*?```)/gs);
 
     const fragments: string[] = parts.map((part, index) => {
-        if (index % 2 === 0) {
-            return part;
-        } else {
+        console.log(part);
+        if (part && part[0] === "[") {
             let citationIndex: number;
-            if (citations.indexOf(part) !== -1) {
-                citationIndex = citations.indexOf(part) + 1;
+            var refinedPart = part.match(/(?<=\[)(.*?)(?=\])/g);
+            var source = "";
+            if (refinedPart) source = refinedPart[0];
+
+            if (citations.indexOf(source) !== -1) {
+                citationIndex = citations.indexOf(source) + 1;
             } else {
-                citations.push(part);
+                citations.push(source);
                 citationIndex = citations.length;
             }
 
-            const path = getCitationFilePath(part);
+            const path = getCitationFilePath(source);
 
             return renderToStaticMarkup(
-                <a className="supContainer" title={part} onClick={() => onCitationClicked(path)}>
+                <a className="supContainer" title={source} onClick={() => onCitationClicked(path)}>
                     <sup>{citationIndex}</sup>
                 </a>
             );
+        } else if (part && part[0] === "`") {
+            return renderToStaticMarkup(
+                <pre>
+                    <code>{part}</code>
+                </pre>
+            );
+        } else {
+            return part;
         }
     });
 
