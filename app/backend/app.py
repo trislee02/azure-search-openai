@@ -153,6 +153,8 @@ def chat():
         logging.exception("Exception in /chat")
         return jsonify({"error": str(e)}), 500
 
+
+
 # def ensure_openai_token():
 #     global openai_token
 #     if openai_token.expires_on < int(time.time()) - 60:

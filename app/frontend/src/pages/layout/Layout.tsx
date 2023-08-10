@@ -10,7 +10,7 @@ const Layout = () => {
             <header className={styles.header} role={"banner"}>
                 <div className={styles.headerContainer}>
                     <Link to="/" className={styles.headerTitleContainer}>
-                        <h3 className={styles.headerTitle}>GPT + Enterprise data | Sample</h3>
+                        <h3 className={styles.headerTitle}>LuxAI S.A. Customer Service</h3>
                     </Link>
                     <nav>
                         <ul className={styles.headerNavList}>
@@ -38,7 +38,9 @@ const Layout = () => {
                             </li>
                         </ul>
                     </nav>
-                    <h4 className={styles.headerRightText}>Azure OpenAI + Cognitive Search</h4>
+                    <Link to="https://github.com/trislee02/azure-search-openai/blob/main/CHANGELOG.md" className={styles.headerTitleContainer}>
+                        <h4 className={styles.headerRightText}>Version 0.1.1</h4>
+                    </Link>
                 </div>
             </header>
 

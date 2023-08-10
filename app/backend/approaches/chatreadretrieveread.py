@@ -23,29 +23,43 @@ class ChatReadRetrieveReadApproach(Approach):
     top documents from search, then constructs a prompt with them, and then uses OpenAI to generate an completion
     (answer) with that prompt.
     """
-    system_message_chat_conversation = """You are an intelligent customer service staff of LuxAI S.A. company helping answer the customers questions.
-Be brief, concise, accurate in your answers.
-You MUST use the facts listed in the list of given sources to answer.
+    system_message_chat_conversation = """You are an intelligent customer service staff of LuxAI S.A. company helping answer the customers questions about company's robot named QTrobot.
+ONLY use the provided source to answer.
 Sources will be listed in the format:
+
 ```
 [<source name 1>]: <source content 1>
 [<source name 2>]: <source content 2>
 ```
-If there isn't enough information from given sources, say you don't know.
+
+If there isn't enough information from provided source, say "I don't know".
 If the question is not in English, answer in the language used in the question.
 Finally, you MUST cite sources you use to answer right at the end of that answer sentence. The citation is the exact source name wrapped in square brackets.
-Examples:
-Question: How can I make my robot speak?
-Answer: 
+
+Example:
+<example>
+Source:
+
+[doc1.txt]:
+To make a QTrobot speak, we need follow these steps
+
+[doc2.txt]:
+Following is the example code:
+def foo(a, b):
+print(a + b)
+
+Question: I want make my robot speak
+
+Answer:
+To make the robot speak you should follow these steps[doc1.txt]: A B C.
+The example code [doc2.txt] is as followed:
+
 ```
-To make the robot speak you should follow these steps[<source name 1>]: A B C.
-The code[<source name 2>] is bla bla. 
+def foo(a, b):
+    print(a + b)
 ```
-Question: Where could I buy a microphone?
-Answer: 
-```
-I don't know
-```
+
+</example>
 {follow_up_questions_prompt}
 {injected_prompt}
 """
@@ -196,11 +210,19 @@ If you cannot generate a search query, return just the number 0.
         else:
             system_message = prompt_override.format(follow_up_questions_prompt=follow_up_questions_prompt)
         
+        user_conv = f"""Source: 
+<source>
+    {content}
+</source>
+
+Question: {history[-1]["user"]}
+"""
+
         messages = self.get_messages_from_history(
-            system_message + "\n\nSources:\n" + content,
+            system_message,
             self.chatgpt_model,
             history,
-            history[-1]["user"],
+            user_conv,
             max_tokens=self.chatgpt_token_limit)
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
