@@ -152,26 +152,38 @@ class ChatReadRetrieveReadApproach(Approach):
             max_tokens=self.chatgpt_token_limit)
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                         temperature=overrides.get("temperature") or 0.0, 
+                                                         temperature=overrides.get("temperature") or 0.7, 
                                                          max_tokens=1024, 
                                                          n=1)
         
         chat_content = chat_completion.choices[0].message.content
 
-        ## STEP 4: Post-checking bot response for hallucinations, attitude
-        response_to_check = f"Text message:\n```\n{chat_content}\n```\n\nSupporting content:\n```\n{content}\n```"
+        ## STEP 4: Post-checking
+        ### STEP 4a: Teacher feedback
+        response_to_check = ChatPrompt.response_check_template.format(source=content,
+                                                                      question=history[-1]["user"],
+                                                                      answer=chat_content)
                 
+        messages = [{"role":"system","content": ChatPrompt.system_message_check_response},
+                  {"role":"user","content": response_to_check}]
+
         chat_completion = self.__compute_chat_completion(messages=[{"role":"system","content": ChatPrompt.system_message_check_response},
                                                                    {"role":"user","content": response_to_check}], 
                                                          temperature=overrides.get("temperature") or 0.0, 
                                                          max_tokens=1024, 
                                                          n=1)
-        check_result = chat_completion.choices[0].message.content
-        print(f"Check result: {check_result}")
+        feedback = chat_completion.choices[0].message.content
+        print(f"Teacher feedback: {feedback}")
+
+        ### STEP 4b: Revise answer based on feedback
+        
 
         msg_to_display = self.format_display_message(messages)
+        msg_to_display += f"<br>{feedback}"
         
-        return {"data_points": results, "answer": chat_content, "thoughts": f"Searched for:<br>{query_text}<br><br>Conversations:<br>" + msg_to_display}
+        return {"data_points": results, 
+                "answer": chat_content, 
+                "thoughts": f"Searched for:<br>{query_text}<br><br>Conversations:<br>" + msg_to_display}
     
     def get_messages_from_history(self, system_prompt: str, model_id: str, history: Sequence[dict[str, str]], user_conv: str, few_shots = [], max_tokens: int = 4096) -> []:
         message_builder = MessageBuilder(system_prompt, model_id)
@@ -197,5 +209,5 @@ class ChatReadRetrieveReadApproach(Approach):
     
     def format_display_message(self, list_messages: list) -> str:
         msg_to_display = '\n=========================================\n\n'.join([str(message) for message in list_messages])
-        msg_to_display = msg_to_display.replace('\n', '<br>').replace('\\n', '<br>').replace('\\', '')
+        msg_to_display = msg_to_display.replace('\n', '<br>').replace('\\n', '<br>')
         return msg_to_display

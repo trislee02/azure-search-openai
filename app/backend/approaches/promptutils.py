@@ -4,6 +4,8 @@ class ChatPrompt:
     USER = "user"
     ASSISTANT = "assistant"
     
+    ## Generation prompt
+
     system_message_chat_conversation = """You are an intelligent customer service staff of LuxAI S.A. company helping answer the customers questions about company's robot named QTrobot.
 ONLY use the provided source to answer.
 Sources will be listed in the format:
@@ -45,10 +47,19 @@ def foo(a, b):
 {injected_prompt}
 """
 
+    user_chat_template = """Source: 
+<source>
+    {content}
+</source>
+
+Question: {question}"""
+
     follow_up_questions_prompt_content = """Generate three very brief follow-up questions that the user would likely ask next about their healthcare plan and employee handbook. 
 Use double angle brackets to reference the questions, e.g. <<Are there exclusions for prescriptions?>>.
 Try not to repeat questions that have already been asked.
 Only generate questions and do not generate any text before or after the questions, such as 'Next Questions'"""
+
+    ## Query refining prompt
 
     query_prompt_template = """Below is a history of the conversation so far, and a new question asked by the user that needs to be answered by searching in a knowledge base.
 Generate a search query based on the conversation and the new question. 
@@ -71,15 +82,43 @@ If you cannot generate a search query, return just the number 0.
         {'role' : ASSISTANT, 'content' : 'number of gestures can be detected' },
     ]
 
-    system_message_check_response = """Given a text message and supporting documents, you must follow these steps to prevent hallucination:
-1. Compare the text message and supporting documents to determine if the message contains out-of-document facts.
-2. If the text message contains code, check it with the supporting documents to determine if it contains any parts of code different from supporting documents.
-Respond 'True' if the text message only uses supporting documents, 'False' if the text message contains facts beyond supporting documents."""
+    ## Post-checking prompt
+    ### Feedback prompt
+    system_message_check_response = """You are an expert in reviewing student answers.
+Given text sources, a question, and a student answer, you must step by step evaluate the student answer correction based on text sources.
+If the student don't know the answer, just skip the evaluation.
+If the answer contains knowledge not mentioned in source, it is wrong.
+Examples:
+Source:
+The following source code will output a standard message along with 'Hello World':
+```python
+from msg.srv import msg_std
+print(msg_std, 'Hello World')
+```
 
-    user_chat_template = """Source: 
-<source>
-    {content}
-</source>
+Question: 
+Write a python code to print out a long message along with 'Hi'.
 
-Question: {question}
+Student answer:
+```python
+from msg.srv import msg_long
+print(msg_long, 'Hi')
+```
+
+Evaluation: The student uses a strange package named `msg_long` which is not included in the source. So the answer is wrong.
+
 """
+
+    response_check_template = """Source:
+{source}
+
+Question:
+{question}
+
+Student answer:
+{answer}
+
+Evaluation:
+"""
+
+    ### Revise answer prompt
