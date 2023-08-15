@@ -159,3 +159,33 @@ Here are the most common failure scenarios and solutions:
 
 1. After running `azd up` and visiting the website, you see a '404 Not Found' in the browser. Wait 10 minutes and try again, as it might be still starting up. Then try running `azd deploy` and wait again. If you still encounter errors with the deployed app, consult these [tips for debugging Flask app deployments](http://blog.pamelafox.org/2023/06/tips-for-debugging-flask-deployments-to.html)
 and file an issue if the error logs don't help you resolve the issue.
+
+
+## Tri's notes
+Go to environment environment file at `.azure/<environment_name>/.env` and configure following variables:
+```
+AZURE_ENV_NAME=
+AZURE_LOCATION="westeurope"
+AZURE_SUBSCRIPTION_ID=
+AZURE_TENANT_ID=
+AZURE_RESOURCE_GROUP=
+AZURE_OPENAI_KEY=
+AZURE_OPENAI_SERVICE="tri-testing"
+AZURE_OPENAI_RESOURCE_GROUP=
+AZURE_OPENAI_GPT_DEPLOYMENT="tri-turbo"
+AZURE_OPENAI_CHATGPT_DEPLOYMENT="tri-turbo"
+AZURE_OPENAI_EMB_DEPLOYMENT="tri-ada"
+AZURE_FORMRECOGNIZER_SERVICE="tri-form-recog"
+AZURE_FORMRECOGNIZER_RESOURCE_GROUP=
+AZURE_SEARCH_INDEX="gptkbindex"
+AZURE_SEARCH_SERVICE="tri-search"
+AZURE_SEARCH_SERVICE_RESOURCE_GROUP=
+AZURE_STORAGE_ACCOUNT=
+AZURE_STORAGE_CONTAINER="content"
+AZURE_STORAGE_RESOURCE_GROUP=
+BACKEND_URI=
+AZURE_SEARCH_SERVICE_KEY=
+AZURE_STORAGE_ACCOUNT_KEY=
+```
+Empirically, we need to use service key to run successfully :)
+If you don't have any environment already, create one using `azd env` commands.

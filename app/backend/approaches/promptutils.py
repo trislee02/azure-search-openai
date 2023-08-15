@@ -75,3 +75,11 @@ If you cannot generate a search query, return just the number 0.
 1. Compare the text message and supporting documents to determine if the message contains out-of-document facts.
 2. If the text message contains code, check it with the supporting documents to determine if it contains any parts of code different from supporting documents.
 Respond 'True' if the text message only uses supporting documents, 'False' if the text message contains facts beyond supporting documents."""
+
+    user_chat_template = """Source: 
+<source>
+    {content}
+</source>
+
+Question: {question}
+"""

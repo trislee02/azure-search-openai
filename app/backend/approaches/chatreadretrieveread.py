@@ -81,8 +81,7 @@ class ChatReadRetrieveReadApproach(Approach):
             ChatPrompt.query_prompt_few_shots,
             self.chatgpt_token_limit - len(user_q)
             )
-        msg_need_display = messages # Debugging
-
+        
         chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.0, max_tokens=32, n=1)
                 
         query_text = chat_completion.choices[0].message.content
@@ -143,14 +142,8 @@ class ChatReadRetrieveReadApproach(Approach):
         else:
             system_message = prompt_override.format(follow_up_questions_prompt=follow_up_questions_prompt)
         
-        user_conv = f"""Source: 
-<source>
-    {content}
-</source>
-
-Question: {history[-1]["user"]}
-"""
-
+        user_conv = ChatPrompt.user_chat_template.format(content=content, question=history[-1]["user"])
+        
         messages = self.get_messages_from_history(
             system_message,
             self.chatgpt_model,
@@ -176,17 +169,15 @@ Question: {history[-1]["user"]}
         check_result = chat_completion.choices[0].message.content
         print(f"Check result: {check_result}")
 
-        msg_to_display = '=========================================\n\n'.join([str(message) for message in messages])
-        msg_to_display = msg_need_display
-        msg_to_display = msg_to_display.replace('\n', '<br>').replace('\\n', '<br>').replace('\\', '')
-
+        msg_to_display = self.format_display_message(messages)
+        
         return {"data_points": results, "answer": chat_content, "thoughts": f"Searched for:<br>{query_text}<br><br>Conversations:<br>" + msg_to_display}
     
     def get_messages_from_history(self, system_prompt: str, model_id: str, history: Sequence[dict[str, str]], user_conv: str, few_shots = [], max_tokens: int = 4096) -> []:
         message_builder = MessageBuilder(system_prompt, model_id)
 
         # Add examples to show the chat what responses we want. It will try to mimic any responses and make sure they match the rules laid out in the system message.
-        for shot in few_shots:
+        for shot in few_shots[::-1]:
             message_builder.append_message(shot.get('role'), shot.get('content'))
 
         user_content = user_conv
@@ -203,3 +194,8 @@ Question: {history[-1]["user"]}
         
         messages = message_builder.messages
         return messages
+    
+    def format_display_message(self, list_messages: list) -> str:
+        msg_to_display = '\n=========================================\n\n'.join([str(message) for message in list_messages])
+        msg_to_display = msg_to_display.replace('\n', '<br>').replace('\\n', '<br>').replace('\\', '')
+        return msg_to_display
