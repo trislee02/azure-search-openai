@@ -3,7 +3,7 @@ from .modelhelper import num_tokens_from_messages
 
 class MessageBuilder:
     """
-      A class for building and managing messages in a chat conversation.
+      A class for building and managing messages in a chat conversation. The system prompt is always added first and later prompts are put after
       Attributes:
           message (list): A list of dictionaries representing chat messages.
           model (str): The name of the ChatGPT model.

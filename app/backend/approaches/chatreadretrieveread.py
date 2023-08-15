@@ -2,6 +2,7 @@ from typing import Any, Sequence
 
 import openai
 import tiktoken
+import json
 from azure.search.documents import SearchClient
 from azure.search.documents.models import QueryType
 from approaches.approach import Approach
@@ -12,82 +13,13 @@ from core.modelhelper import get_token_limit
 
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 
+from approaches.promptutils import ChatPrompt
+
 class ChatReadRetrieveReadApproach(Approach):
     # Chat roles
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
-
-    """
-    Simple retrieve-then-read implementation, using the Cognitive Search and OpenAI APIs directly. It first retrieves
-    top documents from search, then constructs a prompt with them, and then uses OpenAI to generate an completion
-    (answer) with that prompt.
-    """
-    system_message_chat_conversation = """You are an intelligent customer service staff of LuxAI S.A. company helping answer the customers questions about company's robot named QTrobot.
-ONLY use the provided source to answer.
-Sources will be listed in the format:
-
-```
-[<source name 1>]: <source content 1>
-[<source name 2>]: <source content 2>
-```
-
-If there isn't enough information from provided source, say "I don't know".
-If the question is not in English, answer in the language used in the question.
-Finally, you MUST cite sources you use to answer right at the end of that answer sentence. The citation is the exact source name wrapped in square brackets.
-
-Example:
-<example>
-Source:
-
-[doc1.txt]:
-To make a QTrobot speak, we need follow these steps
-
-[doc2.txt]:
-Following is the example code:
-def foo(a, b):
-print(a + b)
-
-Question: I want make my robot speak
-
-Answer:
-To make the robot speak you should follow these steps[doc1.txt]: A B C.
-The example code [doc2.txt] is as followed:
-
-```
-def foo(a, b):
-    print(a + b)
-```
-
-</example>
-{follow_up_questions_prompt}
-{injected_prompt}
-"""
-    follow_up_questions_prompt_content = """Generate three very brief follow-up questions that the user would likely ask next about their healthcare plan and employee handbook. 
-Use double angle brackets to reference the questions, e.g. <<Are there exclusions for prescriptions?>>.
-Try not to repeat questions that have already been asked.
-Only generate questions and do not generate any text before or after the questions, such as 'Next Questions'"""
-
-    query_prompt_template = """Below is a history of the conversation so far, and a new question asked by the user that needs to be answered by searching in a knowledge base.
-Generate a search query based on the conversation and the new question. 
-Do not include cited source filenames and document names e.g info.txt or doc.pdf in the search query terms.
-Do not include any text inside [] or <<>> in the search query terms.
-Do not include any special characters like '+'.
-If the question is not in English, translate the question to English before generating the search query.
-If you cannot generate a search query, return just the number 0.
-"""
-    query_prompt_few_shots = [
-        {'role' : USER, 'content' : 'How can I make the robot speak?' },
-        {'role' : ASSISTANT, 'content' : "steps to make text-to-speech" },
-        {'role' : USER, 'content' : 'I want it to say "Bonjour"' },
-        {'role' : ASSISTANT, 'content' : "code text-to-speech with French" },
-        {'role' : USER, 'content' : 'How many languages do you support?' },
-        {'role' : ASSISTANT, 'content' : 'count supported text-to-speech languages' },
-        {'role' : USER, 'content' : 'Now I want it to recognize my arm movement' },
-        {'role' : ASSISTANT, 'content' : "gesture detection" },
-        {'role' : USER, 'content' : 'How many gestures can you detect?' },
-        {'role' : ASSISTANT, 'content' : 'number of gestures can be detected' },
-    ]
 
     def __init__(self, 
                  search_client: SearchClient, 
@@ -109,7 +41,7 @@ If you cannot generate a search query, return just the number 0.
     def before_retry_sleep(retry_state):
         print(f"Rate limited on the OpenAI API, sleeping 60s before retrying...")
 
-    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+    # @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
         completion = None
         if self.chatgpt_deployment != "":
@@ -142,13 +74,14 @@ If you cannot generate a search query, return just the number 0.
 
         # STEP 1: Generate an optimized keyword search query based on the chat history and the last question
         messages = self.get_messages_from_history(
-            self.query_prompt_template,
+            ChatPrompt.query_prompt_template,
             self.chatgpt_model,
             history,
             user_q,
-            self.query_prompt_few_shots,
+            ChatPrompt.query_prompt_few_shots,
             self.chatgpt_token_limit - len(user_q)
             )
+        msg_need_display = messages # Debugging
 
         chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.0, max_tokens=32, n=1)
                 
@@ -197,16 +130,16 @@ If you cannot generate a search query, return just the number 0.
             results = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field]) for doc in r]
         content = "\n".join(results)
 
-        follow_up_questions_prompt = self.follow_up_questions_prompt_content if overrides.get("suggest_followup_questions") else ""
+        follow_up_questions_prompt = ChatPrompt.follow_up_questions_prompt_content if overrides.get("suggest_followup_questions") else ""
         
         # STEP 3: Generate a contextual and content specific answer using the search results and chat history
 
-        # Allow client to replace the entire prompt, or to inject into the exiting prompt using >>>
+        # Allow client to replace the entire prompt, or to inject into the existing prompt using >>>
         prompt_override = overrides.get("prompt_override")
         if prompt_override is None:
-            system_message = self.system_message_chat_conversation.format(injected_prompt="", follow_up_questions_prompt=follow_up_questions_prompt)
+            system_message = ChatPrompt.system_message_chat_conversation.format(injected_prompt="", follow_up_questions_prompt=follow_up_questions_prompt)
         elif prompt_override.startswith(">>>"):
-            system_message = self.system_message_chat_conversation.format(injected_prompt=prompt_override[3:] + "\n", follow_up_questions_prompt=follow_up_questions_prompt)
+            system_message = ChatPrompt.system_message_chat_conversation.format(injected_prompt=prompt_override[3:] + "\n", follow_up_questions_prompt=follow_up_questions_prompt)
         else:
             system_message = prompt_override.format(follow_up_questions_prompt=follow_up_questions_prompt)
         
@@ -226,15 +159,28 @@ Question: {history[-1]["user"]}
             max_tokens=self.chatgpt_token_limit)
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                         temperature=overrides.get("temperature") or 0.7, 
+                                                         temperature=overrides.get("temperature") or 0.0, 
                                                          max_tokens=1024, 
                                                          n=1)
         
         chat_content = chat_completion.choices[0].message.content
 
-        msg_to_display = '\n\n'.join([str(message) for message in messages])
+        ## STEP 4: Post-checking bot response for hallucinations, attitude
+        response_to_check = f"Text message:\n```\n{chat_content}\n```\n\nSupporting content:\n```\n{content}\n```"
+                
+        chat_completion = self.__compute_chat_completion(messages=[{"role":"system","content": ChatPrompt.system_message_check_response},
+                                                                   {"role":"user","content": response_to_check}], 
+                                                         temperature=overrides.get("temperature") or 0.0, 
+                                                         max_tokens=1024, 
+                                                         n=1)
+        check_result = chat_completion.choices[0].message.content
+        print(f"Check result: {check_result}")
 
-        return {"data_points": results, "answer": chat_content, "thoughts": f"Searched for:<br>{query_text}<br><br>Conversations:<br>" + msg_to_display.replace('\n', '<br>')}
+        msg_to_display = '=========================================\n\n'.join([str(message) for message in messages])
+        msg_to_display = msg_need_display
+        msg_to_display = msg_to_display.replace('\n', '<br>').replace('\\n', '<br>').replace('\\', '')
+
+        return {"data_points": results, "answer": chat_content, "thoughts": f"Searched for:<br>{query_text}<br><br>Conversations:<br>" + msg_to_display}
     
     def get_messages_from_history(self, system_prompt: str, model_id: str, history: Sequence[dict[str, str]], user_conv: str, few_shots = [], max_tokens: int = 4096) -> []:
         message_builder = MessageBuilder(system_prompt, model_id)
