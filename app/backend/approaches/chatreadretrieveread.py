@@ -152,7 +152,7 @@ class ChatReadRetrieveReadApproach(Approach):
             max_tokens=self.chatgpt_token_limit)
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                         temperature=overrides.get("temperature") or 0.7, 
+                                                         temperature=overrides.get("temperature") or 0.0, 
                                                          max_tokens=1024, 
                                                          n=1)
         
@@ -176,7 +176,21 @@ class ChatReadRetrieveReadApproach(Approach):
         print(f"Teacher feedback: {feedback}")
 
         ### STEP 4b: Revise answer based on feedback
-        
+        if feedback.strip() != '0' and feedback.strip() != '1': # If LLM doesn't know the answer or answers correctly, skip the revision
+            response_to_revise = ChatPrompt.response_revise_template.format(source=content,
+                                                                            question=history[-1]["user"],
+                                                                            previous_answer=chat_content,
+                                                                            feedback=feedback)
+            messages = [{"role":"system","content": ChatPrompt.system_message_revise_prompt},
+                    {"role":"user","content": response_to_revise}]
+
+            chat_completion = self.__compute_chat_completion(messages=[{"role":"system","content": ChatPrompt.system_message_revise_prompt},
+                                                                    {"role":"user","content": response_to_revise}], 
+                                                            temperature=overrides.get("temperature") or 0.0, 
+                                                            max_tokens=1024, 
+                                                            n=1)
+            chat_content = chat_completion.choices[0].message.content
+            print(f"Revised answer: {chat_content}")
 
         msg_to_display = self.format_display_message(messages)
         msg_to_display += f"<br>{feedback}"

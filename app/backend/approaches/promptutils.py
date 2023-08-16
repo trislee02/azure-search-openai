@@ -86,8 +86,10 @@ If you cannot generate a search query, return just the number 0.
     ### Feedback prompt
     system_message_check_response = """You are an expert in reviewing student answers.
 Given text sources, a question, and a student answer, you must step by step evaluate the student answer correction based on text sources.
-If the student don't know the answer, just skip the evaluation.
 If the answer contains knowledge not mentioned in source, it is wrong.
+If the student partially suggests contacting LuxAI S.A. customer support, skip this suggestion and evaluate the rest.
+If the student doesn't know the answer and doesn't use any knowledge beyond given sources, only respond `0` without any further explanation.
+
 Examples:
 Source:
 The following source code will output a standard message along with 'Hello World':
@@ -122,3 +124,50 @@ Evaluation:
 """
 
     ### Revise answer prompt
+    system_message_revise_prompt = """You received a feedback on your previous answer.
+Based on the provided sources, question, previous answer and feedback, you must revise your answer wisely.
+If the provided sources do not contain enough facts you need, respond "I don't know".
+
+Example:
+Source:
+The following source code will output a standard message along with 'Hello World':
+```python
+from msg.srv import msg_std
+print(msg_std, 'Hello World')
+```
+
+Question: 
+Write a python code to print out a message using OpenCV library along with 'Hi'.
+
+Previous answer:
+```python
+from msg.srv import msg_opencv
+print(msg_opencv, 'Hi')
+```
+
+Feedback: 
+The student uses a strange package named `msg_opencv` which is not included in the source. So the answer is wrong.
+
+Thought: 
+The feedback said my previous code containing a strange package named `msg_opencv` so I will remove it. On the other hand, based on the provided source, I cannot find any OpenCV library so I will respond "I don't know"
+
+Revised answer:
+I don't know.
+"""
+
+    response_revise_template = """Source:
+{source}
+
+Question:
+{question}
+
+Previous answer:
+{previous_answer}
+
+Feedback:
+{feedback}
+
+Thought:
+
+Revised answer:
+"""
