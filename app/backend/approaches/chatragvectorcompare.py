@@ -13,13 +13,30 @@ from core.modelhelper import get_token_limit
 
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 
-from approaches.promptutils import ChatPrompt
+from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt
+from scipy.spatial.distance import cosine
 
-class ChatReadRetrieveReadApproach(Approach):
+class ChatRAGVectorCompare(Approach):
+    """
+    This approach includes following steps:
+        1. RAG
+            a. Refine search query based on new message and chat history
+            b. Search (Semantic search + Vector search)
+            c. Generate first answer based on retrieved documents
+        2. Iterative vector and answer comparison
+            a. Extract main ideas from previous answer
+            b. Compare previous answer embedding with each retrieved document embedding
+            c. Repeatedly refine the answer with max try
+    """
+
     # Chat roles
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
+
+    THRESHOLD_ANSWER_CLOSE_TO_DOC = 0.1
+
+    MAX_TRY = 3
 
     def __init__(self, 
                  search_client: SearchClient, 
@@ -62,6 +79,13 @@ class ChatReadRetrieveReadApproach(Approach):
         
         return completion
 
+    def __compute_embedding(self, text): 
+        if self.embedding_deployment != "":
+            vector = openai.Embedding.create(engine=self.embedding_deployment, input=text)["data"][0]["embedding"]                
+        else:
+            vector = openai.Embedding.create(input=text, model=self.embed_model)["data"][0]["embedding"]
+        return vector
+
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
         has_text = overrides.get("retrieval_mode") in ["text", "hybrid", None]
         has_vector = overrides.get("retrieval_mode") in ["vectors", "hybrid", None]
@@ -74,11 +98,11 @@ class ChatReadRetrieveReadApproach(Approach):
 
         # STEP 1: Generate an optimized keyword search query based on the chat history and the last question
         messages = self.get_messages_from_history(
-            ChatPrompt.query_prompt_template,
+            ChatRAGPrompt.query_prompt_template,
             self.chatgpt_model,
             history,
             user_q,
-            ChatPrompt.query_prompt_few_shots,
+            ChatRAGPrompt.query_prompt_few_shots,
             self.chatgpt_token_limit - len(user_q)
             )
         
@@ -92,10 +116,7 @@ class ChatReadRetrieveReadApproach(Approach):
 
         # If retrieval mode includes vectors, compute an embedding for the query
         if has_vector:
-            if self.embedding_deployment != "":
-                query_vector = openai.Embedding.create(engine=self.embedding_deployment, input=query_text)["data"][0]["embedding"]                
-            else:
-                query_vector = openai.Embedding.create(input=query_text, model=self.embed_model)["data"][0]["embedding"]
+            query_vector = self.__compute_embedding(query_text)
         else:
             query_vector = None
 
@@ -124,25 +145,25 @@ class ChatReadRetrieveReadApproach(Approach):
                                           top_k=50 if query_vector else None, 
                                           vector_fields="embedding" if query_vector else None)
         if use_semantic_captions:
-            results = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']])) for doc in r]
+            retrieved_docs = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']])) for doc in r]
         else:
-            results = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field]) for doc in r]
-        content = "\n".join(results)
+            retrieved_docs = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field]) for doc in r]
+        supporting_content = "\n".join(retrieved_docs)
 
-        follow_up_questions_prompt = ChatPrompt.follow_up_questions_prompt_content if overrides.get("suggest_followup_questions") else ""
+        follow_up_questions_prompt = ChatRAGPrompt.follow_up_questions_prompt_content if overrides.get("suggest_followup_questions") else ""
         
         # STEP 3: Generate a contextual and content specific answer using the search results and chat history
 
         # Allow client to replace the entire prompt, or to inject into the existing prompt using >>>
         prompt_override = overrides.get("prompt_override")
         if prompt_override is None:
-            system_message = ChatPrompt.system_message_chat_conversation.format(injected_prompt="", follow_up_questions_prompt=follow_up_questions_prompt)
+            system_message = ChatRAGPrompt.system_message_chat_conversation.format(injected_prompt="", follow_up_questions_prompt=follow_up_questions_prompt)
         elif prompt_override.startswith(">>>"):
-            system_message = ChatPrompt.system_message_chat_conversation.format(injected_prompt=prompt_override[3:] + "\n", follow_up_questions_prompt=follow_up_questions_prompt)
+            system_message = ChatRAGPrompt.system_message_chat_conversation.format(injected_prompt=prompt_override[3:] + "\n", follow_up_questions_prompt=follow_up_questions_prompt)
         else:
             system_message = prompt_override.format(follow_up_questions_prompt=follow_up_questions_prompt)
         
-        user_conv = ChatPrompt.user_chat_template.format(content=content, question=history[-1]["user"])
+        user_conv = ChatRAGPrompt.user_chat_template.format(content=supporting_content, question=history[-1]["user"])
         
         messages = self.get_messages_from_history(
             system_message,
@@ -157,45 +178,64 @@ class ChatReadRetrieveReadApproach(Approach):
                                                          n=1)
         
         chat_content = chat_completion.choices[0].message.content
+        chat_content = """As a customer service staff of LuxAI S.A., I can guide you on how to get started with our QTrobot API. Our QTrobot API is a powerful tool that helps you to develop your own applications and use cases on QTrobot.
 
-        ## STEP 4: Post-checking
-        ### STEP 4a: Teacher feedback
-        response_to_check = ChatPrompt.response_check_template.format(source=content,
-                                                                      question=history[-1]["user"],
-                                                                      answer=chat_content)
-                
-        messages = [{"role":"system","content": ChatPrompt.system_message_check_response},
-                  {"role":"user","content": response_to_check}]
+To use our QTrobot API, you can find the documentation and tutorials on our website. The documentation provides an overview of the API and the tutorials guide you through the setup and configuration steps.
 
-        chat_completion = self.__compute_chat_completion(messages=[{"role":"system","content": ChatPrompt.system_message_check_response},
-                                                                   {"role":"user","content": response_to_check}], 
-                                                         temperature=overrides.get("temperature") or 0.0, 
-                                                         max_tokens=1024, 
-                                                         n=1)
-        feedback = chat_completion.choices[0].message.content
-        print(f"Teacher feedback: {feedback}")
+If you need any further assistance with the QTrobot API, please let me know and I'd be happy to help you."""
 
-        ### STEP 4b: Revise answer based on feedback
-        if feedback.strip() != '0' and feedback.strip() != '1': # If LLM doesn't know the answer or answers correctly, skip the revision
-            response_to_revise = ChatPrompt.response_revise_template.format(source=content,
+        ## STEP 4: Compare answer embedding to retrieved document embeddings
+        # An answer is valid if it is "close" to at least one document
+        is_valid = False
+        tries = 0
+        while not is_valid and tries < self.MAX_TRY:
+            tries += 1
+            previous_answer = chat_content
+            ### STEP 4a: Compute answer embedding
+            answer_vector = self.__compute_embedding(previous_answer)
+
+            ### STEP 4b: Compute retrieved documents embeddings
+            doc_embeds = []
+            docs = [] # Debug
+            for doc in retrieved_docs:
+                doc_vector = self.__compute_embedding(doc)
+                doc_embeds.append(doc_vector)
+                docs.append(doc)
+
+            ### STEP 4c: Compare answer embedding to retrieved document embeddings
+            distances = [] # Debug
+            for i in range(len(doc_embeds)):
+                doc_vector = doc_embeds[i]
+                distance = cosine(answer_vector, doc_vector)
+                distances.append(f"{docs[i]}<br>=====>Distance: {str(distance)}")
+                if distance < self.THRESHOLD_ANSWER_CLOSE_TO_DOC:
+                    is_valid = True
+
+            ### STEP 4d: If not valid, refine it
+            if not is_valid:
+                response_to_revise = ChatVectorComparePrompt.user_message_revise_template.format(source=supporting_content,
                                                                             question=history[-1]["user"],
-                                                                            previous_answer=chat_content,
-                                                                            feedback=feedback)
-            messages = [{"role":"system","content": ChatPrompt.system_message_revise_prompt},
-                    {"role":"user","content": response_to_revise}]
+                                                                            previous_answer=previous_answer)
+                messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
+                        {"role":"user","content": response_to_revise}]
 
-            chat_completion = self.__compute_chat_completion(messages=[{"role":"system","content": ChatPrompt.system_message_revise_prompt},
-                                                                    {"role":"user","content": response_to_revise}], 
-                                                            temperature=overrides.get("temperature") or 0.0, 
-                                                            max_tokens=1024, 
-                                                            n=1)
-            chat_content = chat_completion.choices[0].message.content
-            print(f"Revised answer: {chat_content}")
+                chat_completion = self.__compute_chat_completion(messages=[{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
+                                                                        {"role":"user","content": response_to_revise}], 
+                                                                temperature=overrides.get("temperature") or 0.0, 
+                                                                max_tokens=1024, 
+                                                                n=1)
+                chat_content = chat_completion.choices[0].message.content
+                print(f"Revised answer #{tries}: {chat_content}")
+        
+        ## Can't find valid answer after a lot of tries, respond "I don't know"
+        if not is_valid:
+            chat_content = "I don't know :( Please contact our Support team at info@luxai.com. Thank you!"
+        
+        print(f"Final answer: {chat_content}")
 
         msg_to_display = self.format_display_message(messages)
-        msg_to_display += f"<br>{feedback}"
-        
-        return {"data_points": results, 
+        msg_to_display = "<br>-----<br>".join(distances) + f"<br>Is valid: {is_valid}"
+        return {"data_points": retrieved_docs, 
                 "answer": chat_content, 
                 "thoughts": f"Searched for:<br>{query_text}<br><br>Conversations:<br>" + msg_to_display}
     

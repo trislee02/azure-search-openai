@@ -11,8 +11,11 @@ from azure.search.documents import SearchClient
 from approaches.retrievethenread import RetrieveThenReadApproach
 from approaches.readretrieveread import ReadRetrieveReadApproach
 from approaches.readdecomposeask import ReadDecomposeAsk
-from approaches.chatreadretrieveread import ChatReadRetrieveReadApproach
+from approaches.chatragteacherstudent import ChatRAGTeacherStudentApproach
 from azure.storage.blob import BlobServiceClient
+
+from engine.messageclassifier import ChatMessageClassifier
+from engine.messageaction import ChatMessageAction
 
 # Replace these with your own values, either in environment variables or directly here
 AZURE_STORAGE_ACCOUNT = os.environ.get("AZURE_STORAGE_ACCOUNT") or "mystorageaccount"
@@ -90,7 +93,7 @@ ask_approaches = {
 }
 
 chat_approaches = {
-    "rrr": ChatReadRetrieveReadApproach(search_client, 
+    "rrr": ChatRAGTeacherStudentApproach(search_client, 
                                         KB_FIELDS_SOURCEPAGE, 
                                         KB_FIELDS_CONTENT,
                                         chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
@@ -144,10 +147,17 @@ def chat():
         return jsonify({"error": "request must be json"}), 400
     approach = request.json["approach"]
     try:
-        impl = chat_approaches.get(approach)
-        if not impl:
-            return jsonify({"error": "unknown approach"}), 400
-        r = impl.run(request.json["history"], request.json.get("overrides") or {})
+        # impl = chat_approaches.get(approach)
+        # if not impl:
+        #     return jsonify({"error": "unknown approach"}), 400
+        # r = impl.run(request.json["history"], request.json.get("overrides") or {})
+        
+        user_msg = request.json["history"][-1]["user"]
+        message_classifier = ChatMessageClassifier()
+        msg_type = message_classifier.run(user_msg)
+        message_action = ChatMessageAction()
+        r = message_action.run(msg_type, request.json["history"], request.json.get("overrides") or {})
+
         return jsonify(r)
     except Exception as e:
         logging.exception("Exception in /chat")

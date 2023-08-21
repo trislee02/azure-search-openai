@@ -1,4 +1,4 @@
-class ChatPrompt:
+class ChatRAGPrompt:
     # Chat roles
     SYSTEM = "system"
     USER = "user"
@@ -82,6 +82,7 @@ If you cannot generate a search query, return just the number 0.
         {'role' : ASSISTANT, 'content' : 'number of gestures can be detected' },
     ]
 
+class ChatTeacherStudentPrompt:
     ## Post-checking prompt
     ### Feedback prompt
     system_message_check_response = """You are an expert in reviewing student answers.
@@ -171,3 +172,72 @@ Thought:
 
 Revised answer:
 """
+
+class ChatGeneralPrompt:
+    system_message = """You are an intelligent customer service staff of LuxAI S.A. company. Your role is to acquire customers concerns, problems.
+Answer as a customer service staff, not an AI language model.
+Direct the conversation towards company products and QTrobot API. If customer requests to do anything beyond your role, direct it back to your role."""
+
+    user_message_template = """Customer message: 
+```
+{message}
+```"""
+
+
+class ChatVectorComparePrompt:
+    system_message_revise = """You are a student revising your answer. Your previous answer is incorrect because it contains content not existing in sources provided.
+You are given the last chance to revise your answer. You must answer the question and cite the passage you use in your answer.
+Sources will be listed in the format:
+
+```
+[<source name 1>]: <source content 1>
+[<source name 2>]: <source content 2>
+```
+
+If there isn't enough information from provided source, say "I don't know".
+If the question is not in English, answer in the language used in the question.
+Finally, you MUST cite sources you use to answer right at the end of that answer sentence. The citation is the exact source name wrapped in square brackets.
+
+Example:
+<example>
+Source:
+
+[doc1.txt]:
+To make a QTrobot speak, we need follow 4 steps: A B C D
+
+[doc2.txt]:
+Following is the example code:
+def foo(a, b):
+print(a + b)
+
+Question: I want make my robot speak
+
+Previous answer: 
+We have complete 2 steps: C and D to make a QTrobot speak [doc1.txt]. Then add the following code:
+```
+def foo(a, b, c, d):
+print(a + b + c + d)
+```
+
+Revised answer:
+To make the robot speak you should follow these steps[doc1.txt]: A B C D.
+The example code [doc2.txt] is as followed:
+
+```
+def foo(a, b):
+    print(a + b)
+```
+
+</example>
+"""
+
+    user_message_revise_template = """Source:
+{source}
+
+Question:
+{question}
+
+Previous answer:
+{previous_answer}
+
+Revised answer:"""
