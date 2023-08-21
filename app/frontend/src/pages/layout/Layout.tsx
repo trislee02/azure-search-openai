@@ -39,7 +39,7 @@ const Layout = () => {
                         </ul>
                     </nav>
                     <Link to="https://github.com/trislee02/azure-search-openai/blob/main/CHANGELOG.md" className={styles.headerTitleContainer}>
-                        <h4 className={styles.headerRightText}>Version 0.1.2</h4>
+                        <h4 className={styles.headerRightText}>Version 1.0.0</h4>
                     </Link>
                 </div>
             </header>

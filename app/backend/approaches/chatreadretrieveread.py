@@ -99,7 +99,7 @@ class ChatReadRetrieveReadApproach(Approach):
         else:
             query_vector = None
 
-         # Only keep the text query if the retrieval mode uses text, otherwise drop it
+        # Only keep the text query if the retrieval mode uses text, otherwise drop it
         if not has_text:
             query_text = None
 
