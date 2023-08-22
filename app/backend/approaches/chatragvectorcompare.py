@@ -42,6 +42,7 @@ class ChatRAGVectorCompare(Approach):
                  search_client: SearchClient, 
                  sourcepage_field: str, 
                  content_field: str,
+                 embedding_field: str,
                  chatgpt_model = "", 
                  embed_model = "", 
                  chatgpt_deployment = "", 
@@ -49,6 +50,7 @@ class ChatRAGVectorCompare(Approach):
         self.search_client = search_client
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
+        self.embedding_field = embedding_field
         self.embed_model = embed_model
         self.chatgpt_deployment = chatgpt_deployment
         self.chatgpt_model = chatgpt_model
@@ -144,10 +146,18 @@ class ChatRAGVectorCompare(Approach):
                                           vector=query_vector, 
                                           top_k=50 if query_vector else None, 
                                           vector_fields="embedding" if query_vector else None)
-        if use_semantic_captions:
-            retrieved_docs = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']])) for doc in r]
-        else:
-            retrieved_docs = [f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field]) for doc in r]
+        retrieved_docs = []
+        retrieved_doc_embeds = []
+        for doc in r:
+            if use_semantic_captions:
+                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
+            else:
+                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field])
+            doc_vector = doc[self.embedding_field]
+            
+            retrieved_docs.append(doc_content)
+            retrieved_doc_embeds.append(doc_vector)
+        
         supporting_content = "\n".join(retrieved_docs)
 
         follow_up_questions_prompt = ChatRAGPrompt.follow_up_questions_prompt_content if overrides.get("suggest_followup_questions") else ""
@@ -178,11 +188,6 @@ class ChatRAGVectorCompare(Approach):
                                                          n=1)
         
         chat_content = chat_completion.choices[0].message.content
-        chat_content = """As a customer service staff of LuxAI S.A., I can guide you on how to get started with our QTrobot API. Our QTrobot API is a powerful tool that helps you to develop your own applications and use cases on QTrobot.
-
-To use our QTrobot API, you can find the documentation and tutorials on our website. The documentation provides an overview of the API and the tutorials guide you through the setup and configuration steps.
-
-If you need any further assistance with the QTrobot API, please let me know and I'd be happy to help you."""
 
         ## STEP 4: Compare answer embedding to retrieved document embeddings
         # An answer is valid if it is "close" to at least one document
@@ -195,19 +200,20 @@ If you need any further assistance with the QTrobot API, please let me know and 
             answer_vector = self.__compute_embedding(previous_answer)
 
             ### STEP 4b: Compute retrieved documents embeddings
-            doc_embeds = []
-            docs = [] # Debug
-            for doc in retrieved_docs:
-                doc_vector = self.__compute_embedding(doc)
-                doc_embeds.append(doc_vector)
-                docs.append(doc)
+            # doc_embeds = []
+            # docs = [] # Debug
+            # for doc in retrieved_docs:
+            #     doc_vector = self.__compute_embedding(doc)
+            #     doc_embeds.append(doc_vector)
+            #     docs.append(doc)
 
             ### STEP 4c: Compare answer embedding to retrieved document embeddings
             distances = [] # Debug
-            for i in range(len(doc_embeds)):
-                doc_vector = doc_embeds[i]
+            print(len(retrieved_docs), len(retrieved_doc_embeds), "<------- Here are lengths")
+            for i in range(len(retrieved_doc_embeds)):
+                doc_vector = retrieved_doc_embeds[i]
                 distance = cosine(answer_vector, doc_vector)
-                distances.append(f"{docs[i]}<br>=====>Distance: {str(distance)}")
+                distances.append(f"{retrieved_docs[i]}<br>=====>Distance: {str(distance)}")
                 if distance < self.THRESHOLD_ANSWER_CLOSE_TO_DOC:
                     is_valid = True
 

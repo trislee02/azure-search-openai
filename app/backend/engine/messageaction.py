@@ -24,6 +24,7 @@ class ChatMessageAction:
     AZURE_SEARCH_INDEX = os.environ.get("AZURE_SEARCH_INDEX") or "gptkbindex"
 
     KB_FIELDS_CONTENT = os.environ.get("KB_FIELDS_CONTENT") or "content"
+    KB_FIELDS_EMBEDDING = os.environ.get("KB_FIELDS_EMBEDDING") or "embedding"
     KB_FIELDS_CATEGORY = os.environ.get("KB_FIELDS_CATEGORY") or "category"
     KB_FIELDS_SOURCEPAGE = os.environ.get("KB_FIELDS_SOURCEPAGE") or "sourcepage"
 
@@ -89,6 +90,7 @@ class ChatMessageAction:
         "vc": ChatRAGVectorCompare(search_client, 
                                     KB_FIELDS_SOURCEPAGE, 
                                     KB_FIELDS_CONTENT,
+                                    KB_FIELDS_EMBEDDING,
                                     chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                                     chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                                     embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT),
