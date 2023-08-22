@@ -16,7 +16,7 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fi
 from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt
 from scipy.spatial.distance import cosine
 
-class ChatRAGVectorCompare(Approach):
+class ChatRAGVectorCompareApproach(Approach):
     """
     This approach includes following steps:
         1. RAG
@@ -34,7 +34,8 @@ class ChatRAGVectorCompare(Approach):
     USER = "user"
     ASSISTANT = "assistant"
 
-    THRESHOLD_ANSWER_CLOSE_TO_DOC = 0.1
+    THRESHOLD_ANSWER_CLOSE_TO_DOC = 0.15
+    THRESHOLD_NO_ANSWER = 0.25
 
     MAX_TRY = 3
 
@@ -199,17 +200,8 @@ class ChatRAGVectorCompare(Approach):
             ### STEP 4a: Compute answer embedding
             answer_vector = self.__compute_embedding(previous_answer)
 
-            ### STEP 4b: Compute retrieved documents embeddings
-            # doc_embeds = []
-            # docs = [] # Debug
-            # for doc in retrieved_docs:
-            #     doc_vector = self.__compute_embedding(doc)
-            #     doc_embeds.append(doc_vector)
-            #     docs.append(doc)
-
-            ### STEP 4c: Compare answer embedding to retrieved document embeddings
+            ### STEP 4b: Compare answer embedding to retrieved document embeddings
             distances = [] # Debug
-            print(len(retrieved_docs), len(retrieved_doc_embeds), "<------- Here are lengths")
             for i in range(len(retrieved_doc_embeds)):
                 doc_vector = retrieved_doc_embeds[i]
                 distance = cosine(answer_vector, doc_vector)
@@ -217,25 +209,29 @@ class ChatRAGVectorCompare(Approach):
                 if distance < self.THRESHOLD_ANSWER_CLOSE_TO_DOC:
                     is_valid = True
 
-            ### STEP 4d: If not valid, refine it
+            ### STEP 4c: If not valid, refine it
             if not is_valid:
-                response_to_revise = ChatVectorComparePrompt.user_message_revise_template.format(source=supporting_content,
-                                                                            question=history[-1]["user"],
-                                                                            previous_answer=previous_answer)
-                messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
-                        {"role":"user","content": response_to_revise}]
+                no_answer_distance = cosine(ChatVectorComparePrompt.no_answer_embed, answer_vector)
+                print(f"No answer distance: {no_answer_distance}")
+                if (no_answer_distance < self.THRESHOLD_NO_ANSWER):
+                    is_valid = True
+                else:
+                    response_to_revise = ChatVectorComparePrompt.user_message_revise_template.format(source=supporting_content,
+                                                                                question=history[-1]["user"],
+                                                                                previous_answer=previous_answer)
+                    messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
+                            {"role":"user","content": response_to_revise}]
 
-                chat_completion = self.__compute_chat_completion(messages=[{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
-                                                                        {"role":"user","content": response_to_revise}], 
-                                                                temperature=overrides.get("temperature") or 0.0, 
-                                                                max_tokens=1024, 
-                                                                n=1)
-                chat_content = chat_completion.choices[0].message.content
+                    chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                                    temperature=overrides.get("temperature") or 0.0, 
+                                                                    max_tokens=1024, 
+                                                                    n=1)
+                    chat_content = chat_completion.choices[0].message.content
                 print(f"Revised answer #{tries}: {chat_content}")
         
         ## Can't find valid answer after a lot of tries, respond "I don't know"
         if not is_valid:
-            chat_content = "I don't know :( Please contact our Support team at info@luxai.com. Thank you!"
+            chat_content = ChatVectorComparePrompt.no_answer_message
         
         print(f"Final answer: {chat_content}")
 
