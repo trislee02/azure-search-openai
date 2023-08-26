@@ -123,14 +123,20 @@ class MarkdownSplitter:
         if start + self.SECTION_OVERLAP < end:
             yield (all_text[start:end], start)
 
-    def __generate_summary(self, text: str) -> str:
-        system_message = """Summarize the given text concisely as a new and shorter paragraph"""
-        content_template = """Text:
+    def __generate_summary(self, text: str, previous_parts: str) -> str:
+        system_message = """Given the summary of previous parts and full text of this part, write a summary of this part that shows how it relates to the previous parts"""
+        content_template = """Summary of previous parts:
+    ```
+    {summary_previous_parts}
+    ```
+    This part:
     ```
     {text}
-    ```"""
+    ```
+    Summary:"""
         messages = [{"role": "system",  "content": system_message},
-                    {"role": "user",    "content": content_template.format(text=text)}]
+                    {"role": "user",    "content": content_template.format(text=text,
+                                                                           summary_previous_parts=previous_parts)}]
 
         response = openai.ChatCompletion.create(engine=self.gptdeployment,
                                                 messages = messages,
@@ -163,7 +169,7 @@ class MarkdownSplitter:
             for part in self.__split_by_breaks(seg):
                 if summary == "":
                     yield(part[0], find_page(part[1]))
-                    summary = self.__generate_summary(part[0])
+                    summary = self.__generate_summary(part[0], "")
                 else:
-                    yield(f"In the previous parts:\n{summary}\nIn this part:\n{part[0]}", find_page(part[1]))
-                    summary = self.__generate_summary(f"{summary}\n{part[0]}")
+                    summary = self.__generate_summary(part[0], summary)
+                    yield(f"{summary}\n{part[0]}", find_page(part[1]))

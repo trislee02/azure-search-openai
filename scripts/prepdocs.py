@@ -31,6 +31,9 @@ from azure.storage.blob import BlobServiceClient
 from pypdf import PdfReader, PdfWriter
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 
+from splitter.splitter import Splitter
+from splitter.markdownsplitter import MarkdownSplitter
+
 MAX_SECTION_LENGTH = 1000
 SENTENCE_SEARCH_LIMIT = 100
 SECTION_OVERLAP = 100
@@ -156,74 +159,14 @@ def get_document_text(filename):
 
     return page_map
 
-def split_text(page_map):
-    SENTENCE_ENDINGS = [".", "!", "?"]
-    WORDS_BREAKS = [",", ";", ":", " ", "(", ")", "[", "]", "{", "}", "\t", "\n"]
-    if args.verbose: print(f"Splitting '{filename}' into sections")
-
-    def find_page(offset):
-        l = len(page_map)
-        for i in range(l - 1):
-            if offset >= page_map[i][1] and offset < page_map[i + 1][1]:
-                return i
-        return l - 1
-
-    all_text = "".join(p[2] for p in page_map)
-    length = len(all_text)
-    start = 0
-    end = length
-    while start + SECTION_OVERLAP < length:
-        last_word = -1
-        end = start + MAX_SECTION_LENGTH
-
-        if end > length:
-            end = length
-        else:
-            # Try to find the end of the sentence
-            while end < length and (end - start - MAX_SECTION_LENGTH) < SENTENCE_SEARCH_LIMIT and all_text[end] not in SENTENCE_ENDINGS:
-                if all_text[end] in WORDS_BREAKS:
-                    last_word = end
-                end += 1
-            if end < length and all_text[end] not in SENTENCE_ENDINGS and last_word > 0:
-                end = last_word # Fall back to at least keeping a whole word
-        if end < length:
-            end += 1
-
-        # Try to find the start of the sentence or at least a whole word boundary
-        last_word = -1
-        while start > 0 and start > end - MAX_SECTION_LENGTH - 2 * SENTENCE_SEARCH_LIMIT and all_text[start] not in SENTENCE_ENDINGS:
-            if all_text[start] in WORDS_BREAKS:
-                last_word = start
-            start -= 1
-        if all_text[start] not in SENTENCE_ENDINGS and last_word > 0:
-            start = last_word
-        if start > 0:
-            start += 1
-
-        section_text = all_text[start:end]
-        yield (section_text, find_page(start))
-
-        last_table_start = section_text.rfind("<table")
-        if (last_table_start > 2 * SENTENCE_SEARCH_LIMIT and last_table_start > section_text.rfind("</table")):
-            # If the section ends with an unclosed table, we need to start the next section with the table.
-            # If table starts inside SENTENCE_SEARCH_LIMIT, we ignore it, as that will cause an infinite loop for tables longer than MAX_SECTION_LENGTH
-            # If last table starts inside SECTION_OVERLAP, keep overlapping
-            if args.verbose: print(f"Section ends with unclosed table, starting next section with the table at page {find_page(start)} offset {start} table start {last_table_start}")
-            start = min(end - SECTION_OVERLAP, start + last_table_start)
-        else:
-            start = end - SECTION_OVERLAP
-        
-    if start + SECTION_OVERLAP < end:
-        yield (all_text[start:end], find_page(start))
-
 def filename_to_id(filename):
     filename_ascii = re.sub("[^0-9a-zA-Z_-]", "_", filename)
     filename_hash = base64.b16encode(filename.encode('utf-8')).decode('ascii')
     return f"file-{filename_ascii}-{filename_hash}"
 
-def create_sections(filename, page_map, use_vectors):
+def create_sections(filename, page_map, use_vectors, splitter: Splitter):
     file_id = filename_to_id(filename)
-    for i, (content, pagenum) in enumerate(split_text(page_map)):
+    for i, (content, pagenum) in enumerate(splitter.split_text(page_map)):
         section = {
             "id": f"{file_id}-page-{i}",
             "content": content,
@@ -243,7 +186,7 @@ def compute_embedding(text):
     if args.openaiapikey:
         embed = openai.Embedding.create(input=text, model=args.openaiembedmodel)["data"][0]["embedding"]
     else:
-        embed = openai.Embedding.create(engine=args.openaideployment, input=text)["data"][0]["embedding"]
+        embed = openai.Embedding.create(engine=args.openaiembeddingdeployment, input=text)["data"][0]["embedding"]
     if embed and args.verbose: print("Successfully embedded")
     return embed
 
@@ -343,7 +286,8 @@ if __name__ == "__main__":
     parser.add_argument("--openaiembedmodel", required=False, default='text-embedding-ada-002', help="Optional. OpenAI API Embedding model name")
     # Arguments for Azure OpenAI
     parser.add_argument("--openaiservice", help="Name of the Azure OpenAI service used to compute embeddings")
-    parser.add_argument("--openaideployment", help="Name of the Azure OpenAI model deployment for an embedding model ('text-embedding-ada-002' recommended)")
+    parser.add_argument("--openaiembeddingdeployment", help="Name of the Azure OpenAI model deployment for an embedding model ('text-embedding-ada-002' recommended)")
+    parser.add_argument("--openaigptdeployment", help="Name of the Azure OpenAI model deployment for a gpt model ('gpt-3.5-turbo' recommended)")
     parser.add_argument("--openaikey", required=False, help="Optional. Use this Azure OpenAI account key instead of the current user identity to login (use az login to set current user for Azure)")
     
     parser.add_argument("--remove", action="store_true", help="Remove references to this document from blob storage and the search index")
@@ -359,6 +303,11 @@ if __name__ == "__main__":
     default_creds = azd_credential if args.searchkey == None or args.storagekey == None else None
     search_creds = default_creds if args.searchkey == None else AzureKeyCredential(args.searchkey)
     use_vectors = not args.novectors
+
+    # Document splitter / Chunking strategy
+    splitter = MarkdownSplitter(openaikey=args.openaikey,
+                                openaiservice=args.openaiservice,
+                                gptdeployment=args.openaigptdeployment)
     
     if not args.skipblobs:
         storage_creds = default_creds if args.storagekey == None else args.storagekey
@@ -384,7 +333,7 @@ if __name__ == "__main__":
                 openai.api_key = args.openaikey
 
             openai.api_base = f"https://{args.openaiservice}.openai.azure.com"
-            openai.api_version = "2022-12-01"
+            openai.api_version = "2023-05-15"
 
     if args.removeall:
         remove_blobs(None)
@@ -406,5 +355,5 @@ if __name__ == "__main__":
                 if not args.skipblobs:
                     upload_blobs(filename)
                 page_map = get_document_text(filename)
-                sections = create_sections(os.path.basename(filename), page_map, use_vectors)
+                sections = create_sections(os.path.basename(filename), page_map, use_vectors, splitter)
                 index_sections(os.path.basename(filename), sections)
