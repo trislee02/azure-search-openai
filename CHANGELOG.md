@@ -1,5 +1,23 @@
 ## [Azure Cognitive Search - OpenAI API] Changelog
 
+<a name="1.1.0"></a>
+# 1.1.0 (2023-08-26)
+
+*Breaking Changes*
+* Add *Markdown heading splitter* which splits the markdown document by headings and adds a summary of previous parts along with the current part in order to provide the split document more context
+
+*What's next*
+* Improve code generation control
+
+<a name="1.0.0"></a>
+# 1.0.0 (2023-08-16)
+
+*Breaking Changes*
+* Add self-refining feature which repeatedly refine the answer until the answer is close to at least one of retrieved documents
+
+*What's next*
+* Improve chunking strategy
+
 <a name="0.1.1"></a>
 # 0.1.1 (2023-08-04)
 

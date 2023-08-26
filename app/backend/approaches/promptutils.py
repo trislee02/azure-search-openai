@@ -15,7 +15,7 @@ Sources will be listed in the format:
 [<source name 2>]: <source content 2>
 ```
 
-If there isn't enough information from provided source, say "I don't know".
+If there isn't enough information from provided source, say "I don't know" and do not answer any further.
 If the question is not in English, answer in the language used in the question.
 Finally, you MUST cite sources you use to answer right at the end of that answer sentence. The citation is the exact source name wrapped in square brackets.
 

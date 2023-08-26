@@ -265,5 +265,5 @@ class ChatRAGVectorCompareApproach(Approach):
     
     def format_display_message(self, list_messages: list) -> str:
         msg_to_display = '\n=========================================\n\n'.join([str(message) for message in list_messages])
-        msg_to_display = msg_to_display.replace('\n', '<br>').replace('\\n', '<br>')
+        msg_to_display = msg_to_display.replace('\\n', '<br>').replace('\n', '<br>')
         return msg_to_display
