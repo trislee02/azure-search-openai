@@ -95,6 +95,12 @@ def table_to_html(table):
     table_html += "</table>"
     return table_html
 
+def clean_html_text(text):
+    re_html = re.compile(r'<[^>]+>')
+    cleaned_text = re_html.sub('', text)
+    cleaned_text = cleaned_text.replace("&nbsp;", "")
+    return cleaned_text
+
 def get_document_text(filename):
     offset = 0
     page_map = []
@@ -145,6 +151,7 @@ def get_document_text(filename):
     elif os.path.splitext(filename)[1].lower() == ".md":
         with open(filename, "rb") as f:
             content = str(f.read())
+            content = clean_html_text(content)
             page_map.append((0, offset, content))
 
     return page_map
