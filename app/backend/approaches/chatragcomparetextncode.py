@@ -234,7 +234,10 @@ class ChatRAGCompareTextAndCodeApproach(Approach):
                 embed_valid = embed_text_checker.check(previous_answer, retrieved_docs, retrieved_doc_embeds, debug_callback)
 
                 is_valid = code_valid and embed_valid
-            tries += 1
+                tries += 1
+            else:
+                # All "I don't know" answer is valid
+                is_valid = True
 
         
         ## Can't find valid answer after a lot of tries, respond "I don't know"

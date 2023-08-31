@@ -19,16 +19,14 @@ class EmbedTextChecker(Checker):
     
     def check(self, answer: str, content_texts: list, content_vectors: list, callback: callable = None):
         answer_vector = self.__compute_embedding(answer)
-
+        is_valid = False
         distances = [] # Debug
         for i in range(len(content_vectors)):
             doc_vector = content_vectors[i]
             distance = cosine(answer_vector, doc_vector)
             distances.append(f"{content_texts[i]}<br>=====>Distance: {str(distance)}")
             if distance < self.THRESHOLD_ANSWER_CLOSE_TO_DOC:
-                if callback:
-                    callback("\n================\n".join(distances))
-                    return True
+                is_valid = True
         if callback:
             callback("\n================\n".join(distances))
-        return False
+        return is_valid
