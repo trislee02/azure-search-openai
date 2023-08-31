@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@dodona/dolos": "^2.3.0",
+    "node-gyp": "^9.4.0"
+  }
+}

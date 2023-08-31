@@ -7,3 +7,4 @@ azure-search-documents==11.4.0b6
 azure-storage-blob==12.14.1
 tenacity==8.2.2
 scikit-learn
+javascript

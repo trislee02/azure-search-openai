@@ -12,6 +12,7 @@ from azure.search.documents import SearchClient
 from approaches.chatgeneral import ChatGeneral
 from approaches.chatragteacherstudent import ChatRAGTeacherStudentApproach
 from approaches.chatragvectorcompare import ChatRAGVectorCompareApproach
+from approaches.chatragcomparetextncode import ChatRAGCompareTextAndCodeApproach
 from azure.storage.blob import BlobServiceClient
 
 from .messageclassifier import ChatMessageClassifier
@@ -94,13 +95,20 @@ class ChatMessageAction:
                                     chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                                     chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                                     embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT),
+        "ctc": ChatRAGCompareTextAndCodeApproach(search_client, 
+                                    KB_FIELDS_SOURCEPAGE, 
+                                    KB_FIELDS_CONTENT,
+                                    KB_FIELDS_EMBEDDING,
+                                    chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
+                                    chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
+                                    embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT),
         "g": ChatGeneral(chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                          chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                          embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT)
     }
 
     def run(self, msg_type: str, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
-        approach = self.chat_approaches["vc"]
+        approach = self.chat_approaches["ctc"]
 
         # if msg_type == ChatMessageClassifier.TYPE_OTHER:
         #     approach = self.chat_approaches["g"]

@@ -16,7 +16,10 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fi
 from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt
 from scipy.spatial.distance import cosine
 
-class ChatRAGVectorCompareApproach(Approach):
+from approaches.checker.codechecker import CodeChecker
+from approaches.checker.embedtextchecker import EmbedTextChecker
+
+class ChatRAGCompareTextAndCodeApproach(Approach):
     """
     This approach includes following steps:
         1. RAG
@@ -34,7 +37,6 @@ class ChatRAGVectorCompareApproach(Approach):
     USER = "user"
     ASSISTANT = "assistant"
 
-    THRESHOLD_ANSWER_CLOSE_TO_DOC = 0.15
     THRESHOLD_NO_ANSWER = 0.25
 
     MAX_TRY = 3
@@ -190,32 +192,35 @@ class ChatRAGVectorCompareApproach(Approach):
         
         chat_content = chat_completion.choices[0].message.content
 
-        ## STEP 4: Compare answer embedding to retrieved document embeddings
-        # An answer is valid if it is "close" to at least one document
+        check_logs = ""
+        def debug_callback(log):
+            nonlocal check_logs
+            check_logs += f"\n{log}"
+
+        ## STEP 4: Run checks on LLM's answer
+        # An answer is valid only if it satisfies all checkers
         is_valid = False
         tries = 0
         while not is_valid and tries < self.MAX_TRY:
             tries += 1
             previous_answer = chat_content
-            ### STEP 4a: Compute answer embedding
+            
+            # Check whether LLM's answer is "I don't know"
             answer_vector = self.__compute_embedding(previous_answer)
+            no_answer_distance = cosine(ChatVectorComparePrompt.no_answer_embed, answer_vector)
+            print(f"No answer distance: {no_answer_distance}")
+            # If LLM says it knows the answer, then run checks
+            if (no_answer_distance > self.THRESHOLD_NO_ANSWER):
+                # Run checks
+                code_checker = CodeChecker()
+                embed_text_checker = EmbedTextChecker(embedding_deployment=self.embedding_deployment)
+                code_valid = code_checker.check(previous_answer, retrieved_docs, debug_callback)
+                embed_valid = embed_text_checker.check(previous_answer, retrieved_docs, retrieved_doc_embeds, debug_callback)
 
-            ### STEP 4b: Compare answer embedding to retrieved document embeddings
-            distances = [] # Debug
-            for i in range(len(retrieved_doc_embeds)):
-                doc_vector = retrieved_doc_embeds[i]
-                distance = cosine(answer_vector, doc_vector)
-                distances.append(f"{retrieved_docs[i]}<br>=====>Distance: {str(distance)}")
-                if distance < self.THRESHOLD_ANSWER_CLOSE_TO_DOC:
-                    is_valid = True
+                is_valid = code_valid and embed_valid
 
-            ### STEP 4c: If not valid, refine it
-            if not is_valid:
-                no_answer_distance = cosine(ChatVectorComparePrompt.no_answer_embed, answer_vector)
-                print(f"No answer distance: {no_answer_distance}")
-                if (no_answer_distance < self.THRESHOLD_NO_ANSWER):
-                    is_valid = True
-                else:
+                ### If not valid, refine it
+                if not is_valid:
                     response_to_revise = ChatVectorComparePrompt.user_message_revise_template.format(source=supporting_content,
                                                                                 question=history[-1]["user"],
                                                                                 previous_answer=previous_answer)
@@ -227,17 +232,17 @@ class ChatRAGVectorCompareApproach(Approach):
                                                                     max_tokens=1024, 
                                                                     n=1)
                     chat_content = chat_completion.choices[0].message.content
-                print(f"Revised answer #{tries}: {chat_content}")
+                    print(f"Revised answer #{tries}: {chat_content}")
         
         ## Can't find valid answer after a lot of tries, respond "I don't know"
         if not is_valid:
             chat_content = ChatVectorComparePrompt.no_answer_message
-     
+        
         print(f"Final answer: {chat_content}")
 
         msg_to_display = self.format_display_message(messages)
-        msg_to_display = "<br>-----<br>".join(distances) + f"<br>Is valid: {is_valid}"
-        msg_to_display = self.format_display_message(text=msg_to_display)
+        # msg_to_display = self.format_display_message(text=msg_to_display)
+        msg_to_display = self.format_display_message(text=check_logs)
         return {"data_points": retrieved_docs, 
                 "answer": chat_content, 
                 "thoughts": f"Searched for:<br>{query_text}<br><br>Conversations:<br>{msg_to_display}"}
