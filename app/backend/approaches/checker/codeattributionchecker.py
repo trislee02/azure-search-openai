@@ -2,9 +2,10 @@ from approaches.checker.checker import Checker
 from javascript import require, globalThis
 import re
 
-class CodeChecker(Checker):
+class CodeAttributionChecker(Checker):
 
     THRESHOLD_CODE_SIMILARITY = 0.8
+
     LOG_TEMPLATE = """==============COMPARE CODE===============
 Answer code: 
 <pre>
@@ -16,8 +17,8 @@ Source code:
     <code>{source_code}</code>
 </pre>
 ----------------
-@@@@@@> Similarity: {similarity}
-"""        
+@@@@@@> Similarity: {local_similarity}
+"""                 
 
     def __remove_redundant_empty_lines(self, input_string):
         # Define the regular expression pattern to match multiple consecutive empty lines
@@ -53,21 +54,20 @@ Source code:
                     count_similar += pos - first_start + 1
         return count_similar / total_lines
 
-    def __measure_similarity(self, code_1: str, code_2: str):
+    def __clean_text(self, text: str) -> str:
+        cleaned_text = self.__remove_redundant_empty_lines(text)
+        cleaned_text = cleaned_text.replace("\\n", "\n").replace("\\'", "'").replace("```","")
+        return cleaned_text
+
+    def __compare_code(self, code_1: str, code_2: str):
         dolos = require("./jslib/codeplagiarism.js")
-        
-        code_1 = self.__remove_redundant_empty_lines(code_1)
-        code_2 = self.__remove_redundant_empty_lines(code_2)
 
         compares = dolos.compareCode(code_1, code_2)
 
         code_1_similar_parts = [[p[0], p[1]] for p in compares]
         code_2_similar_parts = [[p[2], p[3]] for p in compares]
         
-        percent_1 = self.__calculate_percentage(code_1_similar_parts, code_1)
-        percent_2 = self.__calculate_percentage(code_2_similar_parts, code_2)
-        
-        return percent_1, percent_2
+        return code_1_similar_parts, code_2_similar_parts
 
     def __get_code_blocks(self, text: str) -> dict:
         """
@@ -91,23 +91,29 @@ Source code:
 
         log = ""
         for answer_code in answer_code_blocks.values():
-            is_valid = False
+            answer_code = self.__clean_text(answer_code)
+            attributed_parts = []
             for content in supporting_content:
                 source_code_blocks = self.__get_code_blocks(content)
                 for source_code in source_code_blocks.values():
-                    answer_code = answer_code.replace("```","")
-                    source_code = source_code.replace("\\n", "\n").replace("\\'", "'").replace("```","")
-                    similarity, _ = self.__measure_similarity(answer_code, source_code)
+                    source_code = self.__clean_text(source_code)
+                    similar_parts, _ = self.__compare_code(answer_code, source_code)
+                    attributed_parts.extend(similar_parts)
+                    print("Similar parts:")
+                    print(similar_parts)
+                    local_similarity = self.__calculate_percentage(similar_parts, answer_code)
                     log += self.LOG_TEMPLATE.format(answer_code=answer_code,
                                                     source_code=source_code,
-                                                    similarity=similarity)
-                    
-                    if similarity >= CodeChecker.THRESHOLD_CODE_SIMILARITY:
-                        is_valid = True
-                        break
-                    
+                                                    local_similarity=local_similarity)
+            print("Attributed pards:")
+            print(attributed_parts)
+            attribution_score = self.__calculate_percentage(attributed_parts, answer_code)
+            log += f"\n*******************************\n\
+                Attribution score: {attribution_score}\n\
+                    *******************************\n"
+
             # An answer is invalid if at least one of snippet code included in answer is invalid
-            if not is_valid:
+            if attribution_score < self.THRESHOLD_CODE_SIMILARITY:
                 if callback:
                     callback(log)
                 return False
@@ -116,5 +122,5 @@ Source code:
         return True
 
 if __name__ == '__main__':
-    checker = CodeChecker()
+    checker = CodeAttributionChecker()
     checker.check("```Hello, World```", ["```Hello, World```", "```Hello, World```"])

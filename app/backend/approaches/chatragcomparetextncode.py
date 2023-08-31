@@ -18,6 +18,7 @@ from scipy.spatial.distance import cosine
 
 from approaches.checker.codechecker import CodeChecker
 from approaches.checker.embedtextchecker import EmbedTextChecker
+from approaches.checker.codeattributionchecker import CodeAttributionChecker
 
 class ChatRAGCompareTextAndCodeApproach(Approach):
     """
@@ -201,8 +202,22 @@ class ChatRAGCompareTextAndCodeApproach(Approach):
         # An answer is valid only if it satisfies all checkers
         is_valid = False
         tries = 0
-        while not is_valid and tries < self.MAX_TRY:
-            tries += 1
+        while not is_valid and tries <= self.MAX_TRY:
+            ### If not valid, refine it
+            if not is_valid and tries > 0:
+                response_to_revise = ChatVectorComparePrompt.user_message_revise_template.format(source=supporting_content,
+                                                                            question=history[-1]["user"],
+                                                                            previous_answer=previous_answer)
+                messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
+                        {"role":"user","content": response_to_revise}]
+
+                chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                                temperature=overrides.get("temperature") or 0.0, 
+                                                                max_tokens=1024, 
+                                                                n=1)
+                chat_content = chat_completion.choices[0].message.content
+                print(f"Revised answer #{tries}: {chat_content}")
+
             previous_answer = chat_content
             
             # Check whether LLM's answer is "I don't know"
@@ -212,27 +227,15 @@ class ChatRAGCompareTextAndCodeApproach(Approach):
             # If LLM says it knows the answer, then run checks
             if (no_answer_distance > self.THRESHOLD_NO_ANSWER):
                 # Run checks
-                code_checker = CodeChecker()
+                code_checker = CodeAttributionChecker()
                 embed_text_checker = EmbedTextChecker(embedding_deployment=self.embedding_deployment)
+                
                 code_valid = code_checker.check(previous_answer, retrieved_docs, debug_callback)
                 embed_valid = embed_text_checker.check(previous_answer, retrieved_docs, retrieved_doc_embeds, debug_callback)
 
                 is_valid = code_valid and embed_valid
+            tries += 1
 
-                ### If not valid, refine it
-                if not is_valid:
-                    response_to_revise = ChatVectorComparePrompt.user_message_revise_template.format(source=supporting_content,
-                                                                                question=history[-1]["user"],
-                                                                                previous_answer=previous_answer)
-                    messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
-                            {"role":"user","content": response_to_revise}]
-
-                    chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                                    temperature=overrides.get("temperature") or 0.0, 
-                                                                    max_tokens=1024, 
-                                                                    n=1)
-                    chat_content = chat_completion.choices[0].message.content
-                    print(f"Revised answer #{tries}: {chat_content}")
         
         ## Can't find valid answer after a lot of tries, respond "I don't know"
         if not is_valid:
