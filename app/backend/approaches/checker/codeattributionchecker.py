@@ -1,10 +1,10 @@
 from approaches.checker.checker import Checker
-from javascript import require, globalThis
+from javascript import require
 import re
 
 class CodeAttributionChecker(Checker):
 
-    THRESHOLD_CODE_SIMILARITY = 0.8
+    THRESHOLD_CODE_SIMILARITY = 0.49
 
     LOG_TEMPLATE = """==============COMPARE CODE===============
 Answer code: 
@@ -60,7 +60,9 @@ Source code:
         return cleaned_text
 
     def __compare_code(self, code_1: str, code_2: str):
+        # require = pythonmonkey.createRequire(__file__)
         dolos = require("./jslib/codeplagiarism.js")
+        # result, dolos = js2py.run_file("approaches/checker/jslib/codeplagiarism.js")
 
         compares = dolos.compareCode(code_1, code_2)
 
@@ -99,14 +101,10 @@ Source code:
                     source_code = self.__clean_text(source_code)
                     similar_parts, _ = self.__compare_code(answer_code, source_code)
                     attributed_parts.extend(similar_parts)
-                    print("Similar parts:")
-                    print(similar_parts)
                     local_similarity = self.__calculate_percentage(similar_parts, answer_code)
                     log += self.LOG_TEMPLATE.format(answer_code=answer_code,
                                                     source_code=source_code,
                                                     local_similarity=local_similarity)
-            print("Attributed pards:")
-            print(attributed_parts)
             attribution_score = self.__calculate_percentage(attributed_parts, answer_code)
             log += f"\n*******************************\n\
                 Attribution score: {attribution_score}\n\

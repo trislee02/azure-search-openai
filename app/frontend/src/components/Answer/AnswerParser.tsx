@@ -21,7 +21,8 @@ export function parseAnswerToHtml(answer: string, onCitationClicked: (citationFi
     parsedAnswer = parsedAnswer.trim();
 
     // const parts = parsedAnswer.split(/\[([^\]]+)\]/g);
-    const parts = parsedAnswer.split(/(\[([^\]]+)\])|(```.*?```)/gs);
+    const parts = parsedAnswer.split(/(\[([^\]]+)\])|(```.*?```)/gs); // Worked
+    // const parts = parsedAnswer.split(/(?:`{3}[\s\S]*?`{3}|(\[[^\[\]]+\]))/gs);
 
     const fragments: string[] = parts.map((part, index) => {
         console.log(part);

@@ -13,7 +13,7 @@ from core.modelhelper import get_token_limit
 
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 
-from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt
+from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt, CheckerFeedbackPrompt
 from scipy.spatial.distance import cosine
 
 from approaches.checker.codechecker import CodeChecker
@@ -51,6 +51,8 @@ class ChatRAGCompareTextAndCodeApproach(Approach):
                  embed_model = "", 
                  chatgpt_deployment = "", 
                  embedding_deployment = ""):
+        super().__init__()
+        
         self.search_client = search_client
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
@@ -201,6 +203,7 @@ class ChatRAGCompareTextAndCodeApproach(Approach):
         ## STEP 4: Run checks on LLM's answer
         # An answer is valid only if it satisfies all checkers
         is_valid = False
+        code_valid = False
         tries = 0
         while not is_valid and tries <= self.MAX_TRY:
             ### If not valid, refine it
@@ -208,8 +211,12 @@ class ChatRAGCompareTextAndCodeApproach(Approach):
                 response_to_revise = ChatVectorComparePrompt.user_message_revise_template.format(source=supporting_content,
                                                                             question=history[-1]["user"],
                                                                             previous_answer=previous_answer)
-                messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
-                        {"role":"user","content": response_to_revise}]
+                if not code_valid:
+                    messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise.format(injected_prompt=CheckerFeedbackPrompt.revise_code_hallucination)},
+                            {"role":"user","content": response_to_revise}]
+                else:
+                    messages = [{"role":"system","content": ChatVectorComparePrompt.system_message_revise},
+                            {"role":"user","content": response_to_revise}]
 
                 chat_completion = self.__compute_chat_completion(messages=messages, 
                                                                 temperature=overrides.get("temperature") or 0.0, 
@@ -232,8 +239,9 @@ class ChatRAGCompareTextAndCodeApproach(Approach):
                 
                 code_valid = code_checker.check(previous_answer, retrieved_docs, debug_callback)
                 embed_valid = embed_text_checker.check(previous_answer, retrieved_docs, retrieved_doc_embeds, debug_callback)
-
-                is_valid = code_valid and embed_valid
+                toxicity_valid = self.selfcheck_toxicity(previous_answer)
+                print("Toxicity valid:", toxicity_valid)
+                is_valid = code_valid and embed_valid and toxicity_valid
                 tries += 1
             else:
                 # All "I don't know" answer is valid

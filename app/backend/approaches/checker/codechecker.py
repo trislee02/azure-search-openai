@@ -1,5 +1,5 @@
 from approaches.checker.checker import Checker
-from javascript import require, globalThis
+from javascript import require
 import re
 
 class CodeChecker(Checker):
@@ -55,6 +55,7 @@ Source code:
 
     def __measure_similarity(self, code_1: str, code_2: str):
         dolos = require("./jslib/codeplagiarism.js")
+        # result, dolos = js2py.run_file("approaches/checker/jslib/codeplagiarism.js")
         
         code_1 = self.__remove_redundant_empty_lines(code_1)
         code_2 = self.__remove_redundant_empty_lines(code_2)

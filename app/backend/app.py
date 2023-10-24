@@ -151,7 +151,7 @@ def chat():
         # if not impl:
         #     return jsonify({"error": "unknown approach"}), 400
         # r = impl.run(request.json["history"], request.json.get("overrides") or {})
-        
+        debug = 1 # dump line for debug only
         user_msg = request.json["history"][-1]["user"]
         message_classifier = ChatMessageClassifier()
         msg_type = message_classifier.run(user_msg)
