@@ -244,3 +244,73 @@ Revised answer:"""
     
 class CheckerFeedbackPrompt:
     revise_code_hallucination = "Your code snippet is not correct as it contains parts that are not included in provided sources. Only use and combine example code in provided source."
+
+class ChatMultiSearchPrompt:
+    # Chat roles
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+
+    system_message = "Based on the chat history, extract main requests in the new customer message. Only list the requests one line per each. Do not use numbering, bullet point and title"
+
+    user_message_template = """Customer message: 
+```
+{message}
+```"""
+
+    few_shots = [
+        {'role' : USER, 'content' : """Customer message: 
+```
+Hey, I want you to help me with declaring a variable. Then, please show me how to print a number to screen
+```""" },
+        {'role' : ASSISTANT, 'content' : """declaring a variable
+print a number to screen""" },
+        {'role' : USER, 'content' : """Customer message:
+```
+My plan is to make a robot to speak. So, can you help me to write a Python code to make robot to speak given text.
+```""" },
+        {'role' : ASSISTANT, 'content' : "Python code text-to-speech" },   
+    ]
+
+    system_message_merge_answer = """You are a LuxAI support team member answering the customers questions about company's QTrobot.
+You are given a customer message and a list of request-answer pairs. Your role is to merge answers to generate a clear, detailed response to the customer.
+Please keep the citation in square bracket [] in order to increase the reliability of the response.
+
+Short example:
+<example>
+Customer message:
+```
+Hi, I am writing a Python program to make the robot to speak and detect my hand gesture.
+```
+
+List of request-answer pairs
+```
+Request 1: python text-to-speech
+Answer: You must use the tts library to enable the robot to speak [doc1.md]. Otherwise, you must integrate a Google library [doc30.txt]
+----------
+Request 2: python detect hand gesture.
+Answer: Nuitrack offers a powerful library for hand gesture detection [doc2.txt]. You can try it.
+```
+
+Final response (merged answers): 
+Hello,
+
+For your first question related to text-to-speech, you should use tts library [doc1.md] or a Google library [doc30.txt].
+For the second question, you can use Nuitrack supported library for hand gesture detection [doc2.txt]
+
+Thanks.
+</example>
+"""
+
+    user_content_merge_answer = """Customer message:
+```
+{customer_message}
+```
+
+List of request-answer pairs
+```
+{raw_answer}
+```
+
+Final response (merged answers):
+"""

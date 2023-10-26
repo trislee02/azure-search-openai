@@ -14,6 +14,7 @@ from approaches.chatragteacherstudent import ChatRAGTeacherStudentApproach
 from approaches.chatragvectorcompare import ChatRAGVectorCompareApproach
 from approaches.chatragcomparetextncode import ChatRAGCompareTextAndCodeApproach
 from approaches.chatragcomparetext import ChatRAGCompareTextApproach
+from approaches.chatragmultisearch import ChatRAGMultiSearchApproach
 from azure.storage.blob import BlobServiceClient
 
 from .messageclassifier import ChatMessageClassifier
@@ -110,6 +111,13 @@ class ChatMessageAction:
                                     chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                                     chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                                     embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT),
+        "ms": ChatRAGMultiSearchApproach(search_client, 
+                                    KB_FIELDS_SOURCEPAGE, 
+                                    KB_FIELDS_CONTENT,
+                                    KB_FIELDS_EMBEDDING,
+                                    chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
+                                    chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
+                                    embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT),
         "g": ChatGeneral(chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                          chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                          embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT)
@@ -119,6 +127,6 @@ class ChatMessageAction:
         if msg_type == ChatMessageClassifier.TYPE_OTHER:
             approach = self.chat_approaches["g"]
         elif msg_type == ChatMessageClassifier.TYPE_QUESTION:
-            approach = self.chat_approaches["ct"]
+            approach = self.chat_approaches["ms"]
         r = approach.run(history, overrides)
         return r
