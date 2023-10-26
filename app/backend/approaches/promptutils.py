@@ -263,13 +263,13 @@ class ChatMultiSearchPrompt:
 ```
 Hey, I want you to help me with declaring a variable. Then, please show me how to print a number to screen
 ```""" },
-        {'role' : ASSISTANT, 'content' : """declaring a variable
+        {'role' : ASSISTANT, 'content' : """declare a variable
 print a number to screen""" },
         {'role' : USER, 'content' : """Customer message:
 ```
 My plan is to make a robot to speak. So, can you help me to write a Python code to make robot to speak given text.
 ```""" },
-        {'role' : ASSISTANT, 'content' : "Python code text-to-speech" },   
+        {'role' : ASSISTANT, 'content' : "write Python code text-to-speech" },   
     ]
 
     system_message_merge_answer = """You are a LuxAI support team member answering the customers questions about company's QTrobot.
