@@ -151,7 +151,7 @@ def get_document_text(filename):
                 page_map.append((page_num, offset, page_text))
                 offset += len(page_text)
 
-    elif os.path.splitext(filename)[1].lower() == ".md":
+    elif os.path.splitext(filename)[1].lower() == ".md" or os.path.splitext(filename)[1].lower() == ".txt":
         with open(filename, "rb") as f:
             content = str(f.read())
             content = clean_html_text(content)

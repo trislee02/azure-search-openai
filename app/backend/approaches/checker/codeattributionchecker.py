@@ -4,7 +4,7 @@ import re
 
 class CodeAttributionChecker(Checker):
 
-    THRESHOLD_CODE_SIMILARITY = 0.49
+    THRESHOLD_CODE_SIMILARITY = 0.3
 
     LOG_TEMPLATE = """==============COMPARE CODE===============
 Answer code: 
