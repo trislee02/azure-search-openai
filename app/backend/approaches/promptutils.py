@@ -6,9 +6,10 @@ class ChatRAGPrompt:
     
     ## Generation prompt
 
-    system_message_chat_conversation = """You are a customer service staff of LuxAI S.A. company helping answer the customers questions about company's robot named QTrobot.
+    system_message_chat_conversation = """You are a LuxAI support team member helping answer the customers questions about company's robot named QTrobot.
 ONLY use the provided source to answer. If there isn't enough information from provided source, say "I don't know" and do not answer any further.
 Each of your sentence must be cited from at least one source to prove that you use information from provided sources. The citation is the exact source name wrapped in square brackets.
+Only mention the provided source through citation, do not mention it in the text clearly. Do not mention previous cases.
 
 Example:
 <example>
@@ -180,6 +181,7 @@ Do not apologize for the previous wrong answer.
 {injected_prompt}
 ONLY use the provided source to answer. If there isn't enough information from provided source, say "I don't know" and do not answer any further.
 Cite at least one source in each of your answer sentence. The citation is the exact source name wrapped in square brackets.
+Please provide a detailed and concise answer, do not direct the reader to read any further source.
 
 Example:
 <example>
@@ -226,7 +228,7 @@ Previous answer:
 Revised answer:"""
 
     no_answer_message = "I apologize, but I'm not sure how to help you with that. You can reach out to our Support team at info@luxai.com for further assistance. Thank you for your understanding!"
-
+    book_a_meeting_message = "About this issue, please book a meeting with this link so that we can check it together."
     # The text: "I am sorry I do not know the answer. The provided sources do not contain enough information."
     no_answer_embed = [0.019643718376755714, -0.005760960280895233, -0.014242016710340977, -0.03312872722744942, -0.028535356745123863, 0.026405468583106995, -0.0014546745223924518, -0.025892242789268494, -0.0036823954433202744, -0.008763330988585949, 0.036721307784318924, 0.02602054923772812, 0.010123379528522491, -0.009622984565794468, -0.010367161594331264, 0.003273418638855219, 0.02756022848188877, 0.005639068782329559, 0.0053118872456252575, -0.024339735507965088, 0.021645300090312958, 0.0038395707961171865, -0.014190694317221642, 0.00414429884403944, 0.003196434583514929, 0.010418484918773174, 0.024314073845744133, -0.018938032910227776, -0.007011948153376579, -0.022581936791539192, 0.012926875613629818, -0.0038812702987343073, -0.02699567936360836, -0.03192264586687088, -0.003926177509129047, -0.01479373499751091, 0.0010529148858040571, -0.0035797501914203167, 0.00884672999382019, -0.019695041701197624, 0.004230905324220657, 0.0027361351530998945, -0.0020128076430410147, -0.0157560333609581, -0.021016597747802734, 0.024339735507965088, 0.02459634840488434, -0.0010849914979189634, -0.006941379513591528, 0.039518389850854874, -0.004099391400814056, 0.004394496325403452, -0.009372786618769169, -0.015178654342889786, 0.010854726657271385, 0.0029366142116487026, -0.013715961016714573, 0.005623030476272106, -0.0018428015755489469, -0.007499512750655413, 0.01505034789443016, -0.012471388094127178, -0.006126633379608393, 0.0010104133980348706, -0.02210720255970955, -0.014845057390630245, -0.0048980992287397385, -0.009776952676475048, -0.0010898029431700706, 0.0034899357706308365, 0.015422436408698559, 0.0009310237364843488, -0.0002197248104494065, -0.016153782606124878, 0.01683380827307701, -0.006469853222370148, -0.014049557037651539, 0.025237880647182465, -0.02735493704676628, -0.01240081898868084, 0.01291404478251934, -0.0066719357855618, -0.018719913437962532, 0.002214890206232667, 0.017244387418031693, 0.0007975048501975834, 0.02282571978867054, -0.003499558661133051, -0.01115624699741602, 0.013279718346893787, 0.017680630087852478, 0.03258984163403511, 0.01824517920613289, 0.01133587583899498, -0.009109758771955967, 0.031332436949014664, 0.00166798394639045, 0.0355922132730484, -0.004327135160565376, -0.032461535185575485, -0.02552015520632267, -7.803639164194465e-05, -0.014575613662600517, -0.005953419953584671, -0.04711413383483887, 0.0037273026537150145, 0.008987867273390293, 0.013895589858293533, 0.012638186104595661, -0.03877421095967293, -0.012766492553055286, 0.012176282703876495, -0.0030857704114168882, -0.006460230331867933, -0.022735904902219772, -0.0021395101211965084, 0.06594952195882797, -0.02028525061905384, 0.0035733350086957216, -0.0210935827344656, -0.005100181791931391, -0.00040376439574174583, -0.0005813886527903378, -0.0037786252796649933, 
 0.013959743082523346, 0.020323744043707848, -0.019900331273674965, -0.006248524412512779, -0.03651601821184158, 0.004015992395579815, 0.01245214231312275, 0.013549162074923515, 0.012695924378931522, 0.006665520370006561, -0.023403098806738853, 0.015448098070919514, -0.02206871099770069, 0.015922831371426582, 0.0059983269311487675, -0.004602994304150343, 0.015152992680668831, 0.028227420523762703, -0.01125889178365469, -0.020400727167725563, -0.023865001276135445, 0.016987774521112442, 0.01875840499997139, -0.0044201575219631195, 0.009520339779555798, 0.0008147460175678134, 0.02322346903383732, 0.00831425841897726, 0.008339920081198215, -0.0021330949384719133, 0.015140161849558353, 0.008910883218050003, -0.023505743592977524, 
@@ -251,7 +253,8 @@ class ChatMultiSearchPrompt:
     USER = "user"
     ASSISTANT = "assistant"
 
-    system_message = "Based on the chat history, extract main requests in the new customer message. Only list the requests one line per each. Do not use numbering, bullet point and title"
+    system_message = """Based on the chat history, extract main requests in the new customer message.
+Only list the requests one line per each. Do not use numbering, bullet point and title."""
 
     user_message_template = """Customer message: 
 ```
@@ -274,7 +277,9 @@ My plan is to make a robot to speak. So, can you help me to write a Python code 
 
     system_message_merge_answer = """You are a LuxAI support team member answering the customers questions about company's QTrobot.
 You are given a customer message and a list of request-answer pairs. Your role is to merge answers to generate a clear, detailed response to the customer.
-Please keep the citation in square bracket [] in order to increase the reliability of the response.
+Keep the citation in square bracket [] in order to increase the reliability of the response.
+Keep the code snippet in triple backstick ``` ```.
+Please provide a detailed and concise answer, do not direct the reader to read any further source.
 
 Short example:
 <example>

@@ -20,6 +20,8 @@ from approaches.checker.codechecker import CodeChecker
 from approaches.checker.embedtextchecker import EmbedTextChecker
 from approaches.checker.codeattributionchecker import CodeAttributionChecker
 
+from core.modelhelper import num_tokens_from_chat_messages
+
 class ChatRAGMultiSearchApproach(Approach):
     """
     This approach includes following steps:
@@ -49,7 +51,9 @@ class ChatRAGMultiSearchApproach(Approach):
                  chatgpt_model = "", 
                  embed_model = "", 
                  chatgpt_deployment = "", 
-                 embedding_deployment = ""):
+                 embedding_deployment = "",
+                 completion_deployment = "",
+                 completion_model = ""):
         super().__init__()
         
         self.search_client = search_client
@@ -61,13 +65,16 @@ class ChatRAGMultiSearchApproach(Approach):
         self.chatgpt_model = chatgpt_model
         self.embedding_deployment = embedding_deployment
         self.chatgpt_token_limit = get_token_limit(chatgpt_model)
+        self.completion_deployment = completion_deployment
+        self.completion_model = completion_model
 
     def before_retry_sleep(retry_state):
-        print(f"Rate limited on the OpenAI API, sleeping 60s before retrying...")
+        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
 
-    # @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
         completion = None
+        max_tokens = max_tokens - num_tokens_from_chat_messages(messages=messages, model=self.chatgpt_model)
         if self.chatgpt_deployment != "":
             completion = openai.ChatCompletion.create(
                 deployment_id=self.chatgpt_deployment,
@@ -84,6 +91,23 @@ class ChatRAGMultiSearchApproach(Approach):
                 max_tokens=max_tokens, 
                 n=n)
         
+        return completion
+    
+    def __compute_completion(self, prompt, temperature, max_tokens=4097):
+        completion = None
+        if self.completion_deployment != "":
+            completion = openai.Completion.create(
+                deployment_id=self.completion_deployment,
+                model=self.completion_model,
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens)
+        else:
+            completion = openai.Completion.create(
+                model=self.completion_model,
+                prompt=prompt, 
+                temperature=temperature, 
+                max_tokens=max_tokens)
         return completion
 
     def __compute_embedding(self, text): 
@@ -195,7 +219,7 @@ class ChatRAGMultiSearchApproach(Approach):
 
             chat_completion = self.__compute_chat_completion(messages=messages, 
                                                             temperature=overrides.get("temperature") or 0.0, 
-                                                            max_tokens=1024, 
+                                                            max_tokens=self.chatgpt_token_limit, 
                                                             n=1)
             
             chat_content = chat_completion.choices[0].message.content
@@ -220,7 +244,7 @@ class ChatRAGMultiSearchApproach(Approach):
 
                     chat_completion = self.__compute_chat_completion(messages=messages, 
                                                                     temperature=overrides.get("temperature") or 0.0, 
-                                                                    max_tokens=1024, 
+                                                                    max_tokens=self.chatgpt_token_limit, 
                                                                     n=1)
                     chat_content = chat_completion.choices[0].message.content
                     print(f"Revised answer #{tries}: {chat_content}")
@@ -248,7 +272,8 @@ class ChatRAGMultiSearchApproach(Approach):
             
             ## Can't find valid answer after a lot of tries, respond "I don't know"
             if not is_valid:
-                chat_content = ChatVectorComparePrompt.no_answer_message
+                # chat_content = ChatVectorComparePrompt.no_answer_message
+                chat_content = ChatVectorComparePrompt.book_a_meeting_message
             
             answer_for_request = f"""\nRequest: {query_text}
 
@@ -270,16 +295,20 @@ Answer: {chat_content}
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
                                                         temperature=overrides.get("temperature") or 0.0, 
-                                                        max_tokens=1024, 
+                                                        max_tokens=self.chatgpt_token_limit, 
                                                         n=1)
+        
         chat_content = chat_completion.choices[0].message.content
         print(f"Final answer: {chat_content}")
+
+        contexts = [raw_answer]
 
         # msg_to_display = self.format_display_message(messages)
         # msg_to_display = self.format_display_message(text=msg_to_display)
         msg_to_display = self.format_display_message(text=check_logs)
         return {"data_points": retrieved_docs, 
-                "answer": chat_content, 
+                "answer": chat_content,
+                "contexts": contexts,
                 "thoughts": f"<br>Conversations:<br>{msg_to_display}"}
     
     def get_messages_from_history(self, system_prompt: str, model_id: str, history: Sequence[dict[str, str]], user_conv: str, few_shots = [], max_tokens: int = 4096) -> []:

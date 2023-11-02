@@ -41,10 +41,12 @@ class ChatMessageAction:
     # Add these azd environment in Configuration section of the App service on Azure Portal
     AZURE_OPENAI_KEY = os.environ.get("AZURE_OPENAI_KEY") or ""
     AZURE_OPENAI_SERVICE = os.environ.get("AZURE_OPENAI_SERVICE") or ""
-    AZURE_OPENAI_GPT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_GPT_DEPLOYMENT") or ""
-    AZURE_OPENAI_CHATGPT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_CHATGPT_DEPLOYMENT") or ""
-    AZURE_OPENAI_CHATGPT_MODEL = os.environ.get("AZURE_OPENAI_CHATGPT_MODEL") or "gpt-3.5-turbo"
+    AZURE_OPENAI_GPT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_GPT_35_DEPLOYMENT") or ""
+    AZURE_OPENAI_CHATGPT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_CHATGPT_35_DEPLOYMENT") or ""
+    AZURE_OPENAI_CHATGPT_MODEL = os.environ.get("AZURE_OPENAI_CHATGPT_35_MODEL") or "gpt-3.5-turbo"
     AZURE_OPENAI_EMB_DEPLOYMENT = os.environ.get("AZURE_OPENAI_EMB_DEPLOYMENT") or ""
+    AZURE_OPENAI_COMPLETION_DEPLOYMENT = os.environ.get("AZURE_OPENAI_COMPLETION_DEPLOYMENT") or ""
+    AZURE_OPENAI_COMPLETION_MODEL = os.environ.get("AZURE_OPENAI_COMPLETION_DEPLOYMENT") or "gpt-3.5-turbo-instruct"
 
     # KEY
     AZURE_SEARCH_KEY = os.environ.get("AZURE_SEARCH_SERVICE_KEY") or ""
@@ -117,7 +119,9 @@ class ChatMessageAction:
                                     KB_FIELDS_EMBEDDING,
                                     chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                                     chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
-                                    embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT),
+                                    embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT,
+                                    completion_deployment=AZURE_OPENAI_COMPLETION_DEPLOYMENT,
+                                    completion_model=AZURE_OPENAI_COMPLETION_MODEL),
         "g": ChatGeneral(chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                          chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                          embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT)

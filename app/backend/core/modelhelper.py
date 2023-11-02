@@ -43,6 +43,28 @@ def num_tokens_from_messages(message: dict[str, str], model: str) -> int:
         num_tokens += len(encoding.encode(value))
     return num_tokens
 
+def num_tokens_from_chat_messages(messages: list[dict[str, str]], model: str) -> int:
+    """
+    Calculate the number of tokens required to encode a message.
+    Args:
+        message (dict): The message to encode, represented as a dictionary.
+        model (str): The name of the model to use for encoding.
+    Returns:
+        int: The total number of tokens required to encode the message.
+    Example:
+        message = {'role': 'user', 'content': 'Hello, how are you?'}
+        model = 'gpt-3.5-turbo'
+        num_tokens_from_messages(message, model)
+        output: 11
+    """
+    encoding = tiktoken.encoding_for_model(get_oai_chatmodel_tiktok(model))
+    num_tokens = 0
+    for message in messages:
+        num_tokens += 2  # For "role" and "content" keys
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+    return num_tokens
+
 
 def get_oai_chatmodel_tiktok(aoaimodel: str) -> str:
     message = "Expected Azure OpenAI ChatGPT model name"
