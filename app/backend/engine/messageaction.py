@@ -128,9 +128,10 @@ class ChatMessageAction:
     }
 
     def run(self, msg_type: str, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
-        if msg_type == ChatMessageClassifier.TYPE_OTHER:
-            approach = self.chat_approaches["g"]
-        elif msg_type == ChatMessageClassifier.TYPE_QUESTION:
-            approach = self.chat_approaches["ms"]
+        # if msg_type == ChatMessageClassifier.TYPE_OTHER:
+        #     approach = self.chat_approaches["g"]
+        # elif msg_type == ChatMessageClassifier.TYPE_QUESTION:
+        #     approach = self.chat_approaches["ms"]
+        approach = self.chat_approaches["ms"]
         r = approach.run(history, overrides)
         return r

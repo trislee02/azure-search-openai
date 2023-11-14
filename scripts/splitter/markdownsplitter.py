@@ -38,6 +38,10 @@ class MarkdownSplitter:
         cleaned_text = re_html.sub('', text)
         cleaned_text = cleaned_text.replace("&nbsp;", "")
         return cleaned_text
+    
+    def __clean_special_character(self, text: str) -> str:
+        cleaned_text = text.replace("\\n", "\n").replace("\\t", "\t")
+        return cleaned_text
 
     def __split_markdown_heading(self, text: str) -> list:
         """
@@ -48,6 +52,12 @@ class MarkdownSplitter:
         pattern = r"(?<!`)(?:^|\n)(?:#|##|###)(?![^`]*```[^`]*$)"
         segments = re.split(pattern, text, 0, re.MULTILINE)
         segments = [segment.strip() for segment in segments if segment.strip()]
+        segments_str = "\n=============\n".join(segments)
+        print(f"""Segments:
+{segments_str}
+
+*****************************
+""")
 
         return segments
 
@@ -124,16 +134,16 @@ class MarkdownSplitter:
             yield (all_text[start:end], start)
 
     def __generate_summary(self, text: str, previous_parts: str) -> str:
-        system_message = """Given the summary of previous parts and full text of this part, write a summary of this part that shows how it relates to the previous parts"""
-        content_template = """Summary of previous parts:
-    ```
-    {summary_previous_parts}
-    ```
-    This part:
-    ```
-    {text}
-    ```
-    Summary:"""
+        system_message = """Given the summary of the preceding parts and the complete text of the current part, write a concise introduction that links the current part to the preceding parts."""
+        content_template = """Summary of the preceding parts:
+```
+{summary_previous_parts}
+```
+The current part:
+```
+{text}
+```
+Introduction for the current part:"""
         messages = [{"role": "system",  "content": system_message},
                     {"role": "user",    "content": content_template.format(text=text,
                                                                            summary_previous_parts=previous_parts)}]
@@ -162,6 +172,7 @@ class MarkdownSplitter:
         all_text = "".join(p[2] for p in page_map)
 
         all_text = self.__clean_html_text(all_text)
+        all_text = self.__clean_special_character(all_text)
 
         segments = self.__split_markdown_heading(all_text)
 

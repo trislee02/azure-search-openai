@@ -10,7 +10,7 @@ import time
 import openai
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
-from azure.identity import AzureDeveloperCliCredential
+from azure.identity import AzureDeveloperCliCredential, DefaultAzureCredential
 from azure.search.documents import SearchClient
 from azure.search.documents.indexes import SearchIndexClient
 from azure.search.documents.indexes.models import (
@@ -30,6 +30,9 @@ from azure.search.documents.indexes.models import (
 from azure.storage.blob import BlobServiceClient
 from pypdf import PdfReader, PdfWriter
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
+
+from splitter.splitter import Splitter
+from splitter.markdownsplitter import MarkdownSplitter
 
 MAX_SECTION_LENGTH = 1000
 SENTENCE_SEARCH_LIMIT = 100
@@ -63,6 +66,7 @@ def upload_blobs(filename):
     else:
         blob_name = blob_name_from_file_page(filename)
         with open(filename,"rb") as data:
+            if args.verbose: print(f"\tUploading blob for file {filename} -> {blob_name}")
             blob_container.upload_blob(blob_name, data, overwrite=True)
 
 def remove_blobs(filename):
@@ -94,123 +98,75 @@ def table_to_html(table):
     table_html += "</table>"
     return table_html
 
+def clean_html_text(text):
+    re_html = re.compile(r'<[^>]+>')
+    cleaned_text = re_html.sub('', text)
+    cleaned_text = cleaned_text.replace("&nbsp;", "")
+    return cleaned_text
+
 def get_document_text(filename):
     offset = 0
     page_map = []
-    if args.localpdfparser:
-        reader = PdfReader(filename)
-        pages = reader.pages
-        for page_num, p in enumerate(pages):
-            page_text = p.extract_text()
-            page_map.append((page_num, offset, page_text))
-            offset += len(page_text)
-    else:
-        if args.verbose: print(f"Extracting text from '{filename}' using Azure Form Recognizer")
-        form_recognizer_client = DocumentAnalysisClient(endpoint=f"https://{args.formrecognizerservice}.cognitiveservices.azure.com/", credential=formrecognizer_creds, headers={"x-ms-useragent": "azure-search-chat-demo/1.0.0"})
+    if os.path.splitext(filename)[1].lower() == ".pdf":
+        if args.localpdfparser:
+            reader = PdfReader(filename)
+            pages = reader.pages
+            for page_num, p in enumerate(pages):
+                page_text = p.extract_text()
+                page_map.append((page_num, offset, page_text))
+                offset += len(page_text)
+        else:
+            if args.verbose: print(f"Extracting text from '{filename}' using Azure Form Recognizer")
+            form_recognizer_client = DocumentAnalysisClient(endpoint=f"https://{args.formrecognizerservice}.cognitiveservices.azure.com/", credential=formrecognizer_creds, headers={"x-ms-useragent": "azure-search-chat-demo/1.0.0"})
+            with open(filename, "rb") as f:
+                poller = form_recognizer_client.begin_analyze_document("prebuilt-layout", document = f)
+            form_recognizer_results = poller.result()
+
+            for page_num, page in enumerate(form_recognizer_results.pages):
+                tables_on_page = [table for table in form_recognizer_results.tables if table.bounding_regions[0].page_number == page_num + 1]
+
+                # mark all positions of the table spans in the page
+                page_offset = page.spans[0].offset
+                page_length = page.spans[0].length
+                table_chars = [-1]*page_length
+                for table_id, table in enumerate(tables_on_page):
+                    for span in table.spans:
+                        # replace all table spans with "table_id" in table_chars array
+                        for i in range(span.length):
+                            idx = span.offset - page_offset + i
+                            if idx >=0 and idx < page_length:
+                                table_chars[idx] = table_id
+
+                # build page text by replacing charcters in table spans with table html
+                page_text = ""
+                added_tables = set()
+                for idx, table_id in enumerate(table_chars):
+                    if table_id == -1:
+                        page_text += form_recognizer_results.content[page_offset + idx]
+                    elif not table_id in added_tables:
+                        page_text += table_to_html(tables_on_page[table_id])
+                        added_tables.add(table_id)
+
+                page_text += " "
+                page_map.append((page_num, offset, page_text))
+                offset += len(page_text)
+
+    elif os.path.splitext(filename)[1].lower() == ".md" or os.path.splitext(filename)[1].lower() == ".txt":
         with open(filename, "rb") as f:
-            poller = form_recognizer_client.begin_analyze_document("prebuilt-layout", document = f)
-        form_recognizer_results = poller.result()
+            content = str(f.read())
+            content = clean_html_text(content)
+            page_map.append((0, offset, content))
 
-        for page_num, page in enumerate(form_recognizer_results.pages):
-            tables_on_page = [table for table in form_recognizer_results.tables if table.bounding_regions[0].page_number == page_num + 1]
-
-            # mark all positions of the table spans in the page
-            page_offset = page.spans[0].offset
-            page_length = page.spans[0].length
-            table_chars = [-1]*page_length
-            for table_id, table in enumerate(tables_on_page):
-                for span in table.spans:
-                    # replace all table spans with "table_id" in table_chars array
-                    for i in range(span.length):
-                        idx = span.offset - page_offset + i
-                        if idx >=0 and idx < page_length:
-                            table_chars[idx] = table_id
-
-            # build page text by replacing charcters in table spans with table html
-            page_text = ""
-            added_tables = set()
-            for idx, table_id in enumerate(table_chars):
-                if table_id == -1:
-                    page_text += form_recognizer_results.content[page_offset + idx]
-                elif not table_id in added_tables:
-                    page_text += table_to_html(tables_on_page[table_id])
-                    added_tables.add(table_id)
-
-            page_text += " "
-            page_map.append((page_num, offset, page_text))
-            offset += len(page_text)
     return page_map
-
-def split_text(page_map):
-    SENTENCE_ENDINGS = [".", "!", "?"]
-    WORDS_BREAKS = [",", ";", ":", " ", "(", ")", "[", "]", "{", "}", "\t", "\n"]
-    if args.verbose: print(f"Splitting '{filename}' into sections")
-
-    def find_page(offset):
-        l = len(page_map)
-        for i in range(l - 1):
-            if offset >= page_map[i][1] and offset < page_map[i + 1][1]:
-                return i
-        return l - 1
-
-    all_text = "".join(p[2] for p in page_map)
-    length = len(all_text)
-    start = 0
-    end = length
-    while start + SECTION_OVERLAP < length:
-        last_word = -1
-        end = start + MAX_SECTION_LENGTH
-
-        if end > length:
-            end = length
-        else:
-            # Try to find the end of the sentence
-            while end < length and (end - start - MAX_SECTION_LENGTH) < SENTENCE_SEARCH_LIMIT and all_text[end] not in SENTENCE_ENDINGS:
-                if all_text[end] in WORDS_BREAKS:
-                    last_word = end
-                end += 1
-            if end < length and all_text[end] not in SENTENCE_ENDINGS and last_word > 0:
-                end = last_word # Fall back to at least keeping a whole word
-        if end < length:
-            end += 1
-
-        # Try to find the start of the sentence or at least a whole word boundary
-        last_word = -1
-        while start > 0 and start > end - MAX_SECTION_LENGTH - 2 * SENTENCE_SEARCH_LIMIT and all_text[start] not in SENTENCE_ENDINGS:
-            if all_text[start] in WORDS_BREAKS:
-                last_word = start
-            start -= 1
-        if all_text[start] not in SENTENCE_ENDINGS and last_word > 0:
-            start = last_word
-        if start > 0:
-            start += 1
-
-        section_text = all_text[start:end]
-        yield (section_text, find_page(start))
-
-        last_table_start = section_text.rfind("<table")
-        if (last_table_start > 2 * SENTENCE_SEARCH_LIMIT and last_table_start > section_text.rfind("</table")):
-            # If the section ends with an unclosed table, we need to start the next section with the table.
-            # If table starts inside SENTENCE_SEARCH_LIMIT, we ignore it, as that will cause an infinite loop for tables longer than MAX_SECTION_LENGTH
-            # If last table starts inside SECTION_OVERLAP, keep overlapping
-            if args.verbose: print(f"Section ends with unclosed table, starting next section with the table at page {find_page(start)} offset {start} table start {last_table_start}")
-            start = min(end - SECTION_OVERLAP, start + last_table_start)
-        else:
-            start = end - SECTION_OVERLAP
-        
-    if start + SECTION_OVERLAP < end:
-        yield (all_text[start:end], find_page(start))
 
 def filename_to_id(filename):
     filename_ascii = re.sub("[^0-9a-zA-Z_-]", "_", filename)
     filename_hash = base64.b16encode(filename.encode('utf-8')).decode('ascii')
     return f"file-{filename_ascii}-{filename_hash}"
 
-def create_sections(filename, page_map, use_vectors):
-    print("Creating sections...")
+def create_sections(filename, page_map, use_vectors, splitter: Splitter):
     file_id = filename_to_id(filename)
-    for i, (content, pagenum) in enumerate(split_text(page_map)):
-        print('content:', content)
+    for i, (content, pagenum) in enumerate(splitter.split_text(page_map)):
         section = {
             "id": f"{file_id}-page-{i}",
             "content": content,
@@ -218,17 +174,25 @@ def create_sections(filename, page_map, use_vectors):
             "sourcepage": blob_name_from_file_page(filename, pagenum),
             "sourcefile": filename
         }
+        print(f"""Content:
+
+{content}
+
+---------------------
+""")
         # if use_vectors:
         #     section["embedding"] = compute_embedding(content)
         yield section
 
 def before_retry_sleep(retry_state):
-    if args.verbose: print(f"Rate limited on the OpenAI embeddings API, sleeping 60s before retrying...")
+    if args.verbose: print(f"Rate limited on the OpenAI embeddings API, sleeping before retrying...")
 
-# @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
-@retry(wait=wait_fixed(60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+@retry(wait=wait_random_exponential(min=20, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
 def compute_embedding(text):
-    embed = openai.Embedding.create(input=text, model=args.openaiembedmodel)["data"][0]["embedding"]
+    if args.openaiapikey:
+        embed = openai.Embedding.create(input=text, model=args.openaiembedmodel)["data"][0]["embedding"]
+    else:
+        embed = openai.Embedding.create(engine=args.openaiembeddingdeployment, input=text)["data"][0]["embedding"]
     if embed and args.verbose: print("Successfully embedded")
     return embed
 
@@ -323,8 +287,15 @@ if __name__ == "__main__":
     parser.add_argument("--index", help="Name of the Azure Cognitive Search index where content should be indexed (will be created if it doesn't exist)")
     parser.add_argument("--searchkey", required=False, help="Optional. Use this Azure Cognitive Search account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--novectors", action="store_true", help="Don't compute embeddings for the sections (e.g. don't call the OpenAI embeddings API during indexing)")
-    parser.add_argument("--openaiapikey", help="Required. OpenAI API key")
-    parser.add_argument("--openaiembedmodel", default='text-embedding-ada-002', help="Required. OpenAI API Embedding model name")
+    # Arguments for OpenAI
+    parser.add_argument("--openaiapikey", required=False, help="Optional. OpenAI API key, not Azure OpenAI key")
+    parser.add_argument("--openaiembedmodel", required=False, default='text-embedding-ada-002', help="Optional. OpenAI API Embedding model name")
+    # Arguments for Azure OpenAI
+    parser.add_argument("--openaiservice", help="Name of the Azure OpenAI service used to compute embeddings")
+    parser.add_argument("--openaiembeddingdeployment", help="Name of the Azure OpenAI model deployment for an embedding model ('text-embedding-ada-002' recommended)")
+    parser.add_argument("--openaigptdeployment", help="Name of the Azure OpenAI model deployment for a gpt model ('gpt-3.5-turbo' recommended)")
+    parser.add_argument("--openaikey", required=False, help="Optional. Use this Azure OpenAI account key instead of the current user identity to login (use az login to set current user for Azure)")
+    
     parser.add_argument("--remove", action="store_true", help="Remove references to this document from blob storage and the search index")
     parser.add_argument("--removeall", action="store_true", help="Remove all blobs from blob storage and documents from the search index")
     parser.add_argument("--localpdfparser", action="store_true", help="Use PyPdf local PDF parser (supports only digital PDFs) instead of Azure Form Recognizer service to extract text, tables and layout from the documents")
@@ -339,6 +310,11 @@ if __name__ == "__main__":
     search_creds = default_creds if args.searchkey == None else AzureKeyCredential(args.searchkey)
     use_vectors = not args.novectors
 
+    # Document splitter / Chunking strategy
+    splitter = MarkdownSplitter(openaikey=args.openaikey,
+                                openaiservice=args.openaiservice,
+                                gptdeployment=args.openaigptdeployment)
+    
     if not args.skipblobs:
         storage_creds = default_creds if args.storagekey == None else args.storagekey
     if not args.localpdfparser:
@@ -350,7 +326,20 @@ if __name__ == "__main__":
 
     ### Comment out all things related to Azure OpenAI service
     if use_vectors:
-        openai.api_key = args.openaiapikey
+        # If OpenAI API key provided, use OpenAI API directly
+        if args.openaiapikey:
+            openai.api_key = args.openaiapikey
+        else:
+            # Otherwise, use Azure OpenAI service
+            if args.openaikey == None:
+                openai.api_key = azd_credential.get_token("https://cognitiveservices.azure.com/.default").token
+                openai.api_type = "azure_ad"
+            else:
+                openai.api_type = "azure"
+                openai.api_key = args.openaikey
+
+            openai.api_base = f"https://{args.openaiservice}.openai.azure.com"
+            openai.api_version = "2023-05-15"
 
     if args.removeall:
         remove_blobs(None)
@@ -369,10 +358,10 @@ if __name__ == "__main__":
                 remove_blobs(None)
                 remove_from_index(None)
             else:
-                if not args.skipblobs:
-                    upload_blobs(filename)
+                # if not args.skipblobs:
+                #     upload_blobs(filename)
                 page_map = get_document_text(filename)
-                sections = create_sections(os.path.basename(filename), page_map, use_vectors)
+                sections = create_sections(os.path.basename(filename), page_map, use_vectors, splitter)
                 for s in sections:
                     pass
-                #index_sections(os.path.basename(filename), sections)
+                # index_sections(os.path.basename(filename), sections)

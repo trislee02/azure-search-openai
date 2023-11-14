@@ -6,10 +6,11 @@ class ChatRAGPrompt:
     
     ## Generation prompt
 
-    system_message_chat_conversation = """You are a LuxAI support team member helping answer the customers questions about company's robot named QTrobot.
+    system_message_chat_conversation = """You are a member of LuxAI Support team. Your role is answering the customers questions about company's robot named QTrobot.
 ONLY use the provided source to answer. If there isn't enough information from provided source, say "I don't know" and do not answer any further.
 Each of your sentence must be cited from at least one source to prove that you use information from provided sources. The citation is the exact source name wrapped in square brackets.
-Only mention the provided source through citation, do not mention it in the text clearly. Do not mention previous cases.
+Do not answer in any way that reveal you are inferring from a source.
+The provided source may contain your LuxAI Support team member's answer for previously similar request. Use that as your answer.
 
 Example:
 <example>
@@ -164,11 +165,11 @@ Revised answer:
 """
 
 class ChatGeneralPrompt:
-    system_message = """You are an intelligent customer service staff of LuxAI S.A. company. Your role is to acquire customers concerns, problems.
+    system_message = """You are an intelligent member of LuxAI Support team. Your role is to acquire customers concerns, problems.
 Answer as a customer service staff, not an AI language model.
 Direct the conversation towards company products and QTrobot API. If customer requests to do anything beyond your role, direct it back to your role."""
 
-    user_message_template = """Customer message: 
+    user_message_template = """Here is the customer message: 
 ```
 {message}
 ```"""
@@ -246,33 +247,31 @@ Revised answer:"""
     
 class CheckerFeedbackPrompt:
     revise_code_hallucination = "Your code snippet is not correct as it contains parts that are not included in provided sources. Only use and combine example code in provided source."
-
 class ChatMultiSearchPrompt:
     # Chat roles
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
 
-    system_message = """Based on the chat history, extract main requests in the new customer message.
-Only list the requests one line per each. Do not use numbering, bullet point and title."""
+    system_message = """Based on the conversation history and latest message, extract main questions needed to be answered in the latest message. Include the scenario in the questions if it provides clear context.
+Return the list of found questions ONLY. Do not use numbering, bullet points, introduction and titles.
+One line per question and associated scenario.
+If no questions found, return "0".
+"""
 
-    user_message_template = """Customer message: 
+    user_message_template = """Recent customer's message:
 ```
 {message}
-```"""
+```
+"""
 
     few_shots = [
-        {'role' : USER, 'content' : """Customer message: 
-```
-Hey, I want you to help me with declaring a variable. Then, please show me how to print a number to screen
-```""" },
-        {'role' : ASSISTANT, 'content' : """declare a variable
-print a number to screen""" },
-        {'role' : USER, 'content' : """Customer message:
-```
-My plan is to make a robot to speak. So, can you help me to write a Python code to make robot to speak given text.
-```""" },
-        {'role' : ASSISTANT, 'content' : "write Python code text-to-speech" },   
+        {'role' : USER, 'content' : "I have got an issue with my program. My screen turned blue after running the command 'avz hello-world.ccs'. But when I restarted the computer, the program was launched at start up. What is causing the issue and how can I resolve this issue?" },
+        {'role' : ASSISTANT, 'content' : """The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. How to resolve this issue?
+The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. What is causing this issue?""" },
+        {'role' : USER, 'content' : "What does the command do? Are there any other commands to do that?" },
+        {'role' : ASSISTANT, 'content' : """What does the command 'avz hello-world.ccs' do?
+Are there any other commands to do the same thing as the command 'avz hello-world.ccs' does?""" },
     ]
 
     system_message_merge_answer = """You are a LuxAI support team member answering the customers questions about company's QTrobot.
