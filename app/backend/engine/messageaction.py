@@ -15,6 +15,7 @@ from approaches.chatragvectorcompare import ChatRAGVectorCompareApproach
 from approaches.chatragcomparetextncode import ChatRAGCompareTextAndCodeApproach
 from approaches.chatragcomparetext import ChatRAGCompareTextApproach
 from approaches.chatragmultisearch import ChatRAGMultiSearchApproach
+from approaches.chatragmultirag import ChatRAGMultiRAGApproach
 from azure.storage.blob import BlobServiceClient
 
 from .messageclassifier import ChatMessageClassifier
@@ -24,7 +25,8 @@ class ChatMessageAction:
     AZURE_STORAGE_ACCOUNT = os.environ.get("AZURE_STORAGE_ACCOUNT") or "mystorageaccount"
     AZURE_STORAGE_CONTAINER = os.environ.get("AZURE_STORAGE_CONTAINER") or "content"
     AZURE_SEARCH_SERVICE = os.environ.get("AZURE_SEARCH_SERVICE") or "gptkb"
-    AZURE_SEARCH_INDEX = os.environ.get("AZURE_SEARCH_INDEX") or "gptkbindex"
+    AZURE_SEARCH_INDEX_TEXT = os.environ.get("AZURE_SEARCH_INDEX_TEXT") or "gptkbindex-text"
+    AZURE_SEARCH_INDEX_CODE = os.environ.get("AZURE_SEARCH_INDEX_CODE") or "gptkbindex-code"
 
     KB_FIELDS_CONTENT = os.environ.get("KB_FIELDS_CONTENT") or "content"
     KB_FIELDS_EMBEDDING = os.environ.get("KB_FIELDS_EMBEDDING") or "embedding"
@@ -78,12 +80,22 @@ class ChatMessageAction:
     # Set up clients for Cognitive Search and Storage
     search_client = SearchClient(
         endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
-        index_name=AZURE_SEARCH_INDEX,
+        index_name=AZURE_SEARCH_INDEX_TEXT,
+        credential=search_creds)
+    search_client_code = SearchClient(
+        endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
+        index_name=AZURE_SEARCH_INDEX_CODE,
         credential=search_creds)
     blob_client = BlobServiceClient(
         account_url=f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net", 
         credential=storage_creds)
     blob_container = blob_client.get_container_client(AZURE_STORAGE_CONTAINER)
+    
+    search_clients = {
+        "text": search_client,
+        "code": search_client_code,
+    }
+
 
     chat_approaches = {
         "ts": ChatRAGTeacherStudentApproach(search_client, 
@@ -122,6 +134,15 @@ class ChatMessageAction:
                                     embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT,
                                     completion_deployment=AZURE_OPENAI_COMPLETION_DEPLOYMENT,
                                     completion_model=AZURE_OPENAI_COMPLETION_MODEL),
+        "mr": ChatRAGMultiRAGApproach(search_clients,
+                                      KB_FIELDS_SOURCEPAGE, 
+                                      KB_FIELDS_CONTENT,
+                                      KB_FIELDS_EMBEDDING,
+                                      chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
+                                      chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
+                                      embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT,
+                                      completion_deployment=AZURE_OPENAI_COMPLETION_DEPLOYMENT,
+                                      completion_model=AZURE_OPENAI_COMPLETION_MODEL),
         "g": ChatGeneral(chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                          chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                          embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT)
@@ -132,6 +153,6 @@ class ChatMessageAction:
         #     approach = self.chat_approaches["g"]
         # elif msg_type == ChatMessageClassifier.TYPE_QUESTION:
         #     approach = self.chat_approaches["ms"]
-        approach = self.chat_approaches["ms"]
+        approach = self.chat_approaches["mr"]
         r = approach.run(history, overrides)
         return r

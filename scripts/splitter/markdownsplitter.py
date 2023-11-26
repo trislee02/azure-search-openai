@@ -1,7 +1,9 @@
 import re
 import openai
+from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
+from splitter.splitter import Splitter
 
-class MarkdownSplitter:
+class MarkdownSplitter(Splitter):
     def __init__(self, openaiapikey: str = None, openaikey: str = "", openaiservice: str = "", gptdeployment: str = ""):
         self.gptdeployment = gptdeployment
         if openaiapikey:
@@ -133,6 +135,11 @@ class MarkdownSplitter:
         if start + self.SECTION_OVERLAP < end:
             yield (all_text[start:end], start)
 
+
+    def before_retry_sleep(retry_state):
+        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+
+    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __generate_summary(self, text: str, previous_parts: str) -> str:
         system_message = """Given the summary of the preceding parts and the complete text of the current part, write a concise introduction that links the current part to the preceding parts."""
         content_template = """Summary of the preceding parts:

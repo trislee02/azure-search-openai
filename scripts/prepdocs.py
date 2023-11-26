@@ -33,6 +33,7 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fi
 
 from splitter.splitter import Splitter
 from splitter.markdownsplitter import MarkdownSplitter
+from splitter.codesplitter import CodeSplitter
 
 MAX_SECTION_LENGTH = 1000
 SENTENCE_SEARCH_LIMIT = 100
@@ -153,8 +154,12 @@ def get_document_text(filename):
 
     elif os.path.splitext(filename)[1].lower() == ".md" or os.path.splitext(filename)[1].lower() == ".txt":
         with open(filename, "rb") as f:
-            content = str(f.read())
+            content = f.read().decode('utf-8')
             content = clean_html_text(content)
+            page_map.append((0, offset, content))
+    elif os.path.splitext(filename)[1].lower() == ".py" or os.path.splitext(filename)[1].lower() == ".cpp":
+        with open(filename, "rb") as f:
+            content = f.read().decode('utf-8')
             page_map.append((0, offset, content))
 
     return page_map
@@ -164,8 +169,13 @@ def filename_to_id(filename):
     filename_hash = base64.b16encode(filename.encode('utf-8')).decode('ascii')
     return f"file-{filename_ascii}-{filename_hash}"
 
-def create_sections(filename, page_map, use_vectors, splitter: Splitter):
+def create_sections(filename, page_map, use_vectors, splitters: dict[str, Splitter]):
     file_id = filename_to_id(filename)
+    if filename.endswith(".py"):
+        splitter = splitters["code"]
+    else:
+        splitter = splitters["markdown"]
+
     for i, (content, pagenum) in enumerate(splitter.split_text(page_map)):
         section = {
             "id": f"{file_id}-page-{i}",
@@ -176,6 +186,7 @@ def create_sections(filename, page_map, use_vectors, splitter: Splitter):
         }
         if use_vectors:
             section["embedding"] = compute_embedding(content)
+        if args.verbose: print(f"Content:\n{content}")
         yield section
 
 def before_retry_sleep(retry_state):
@@ -190,13 +201,10 @@ def compute_embedding(text):
     if embed and args.verbose: print("Successfully embedded")
     return embed
 
-def create_search_index():
-    if args.verbose: print(f"Ensuring search index {args.index} exists")
-    index_client = SearchIndexClient(endpoint=f"https://{args.searchservice}.search.windows.net/",
-                                     credential=search_creds)
-    if args.index not in index_client.list_index_names():
+def check_index_exist(index_client, index_name):
+    if index_name not in index_client.list_index_names():
         index = SearchIndex(
-            name=args.index,
+            name=index_name,
             fields=[
                 SimpleField(name="id", type="Edm.String", key=True),
                 SearchableField(name="content", type="Edm.String", analyzer_name="en.microsoft"),
@@ -222,16 +230,29 @@ def create_search_index():
                     ]
                 )        
             )
-        if args.verbose: print(f"Creating {args.index} search index")
+        if args.verbose: print(f"Creating {index_name} search index")
         index_client.create_index(index)
     else:
-        if args.verbose: print(f"Search index {args.index} already exists")
+        if args.verbose: print(f"Search index {index_name} already exists")
+
+def create_search_index():
+    if args.verbose: print(f"Ensuring search index {args.indextext} and {args.indexcode} exists")
+    index_client = SearchIndexClient(endpoint=f"https://{args.searchservice}.search.windows.net/",
+                                     credential=search_creds)
+    check_index_exist(index_client, args.indextext)
+    check_index_exist(index_client, args.indexcode)    
 
 def index_sections(filename, sections):
-    if args.verbose: print(f"Indexing sections from '{filename}' into search index '{args.index}'")
+    if filename.endswith(".py"):
+        index_name = args.indexcode
+    else:
+        index_name = args.indextext
+
     search_client = SearchClient(endpoint=f"https://{args.searchservice}.search.windows.net/",
-                                    index_name=args.index,
+                                    index_name=index_name,
                                     credential=search_creds)
+    if args.verbose: print(f"Indexing sections from '{filename}' into search index '{index_name}'")
+    
     i = 0
     batch = []
     for s in sections:
@@ -249,9 +270,9 @@ def index_sections(filename, sections):
         if args.verbose: print(f"\tIndexed {len(results)} sections, {succeeded} succeeded")
 
 def remove_from_index(filename):
-    if args.verbose: print(f"Removing sections from '{filename or '<all>'}' from search index '{args.index}'")
+    if args.verbose: print(f"Removing sections from '{filename or '<all>'}' from search index '{args.indextext}'")
     search_client = SearchClient(endpoint=f"https://{args.searchservice}.search.windows.net/",
-                                    index_name=args.index,
+                                    index_name=args.indextext,
                                     credential=search_creds)
     while True:
         filter = None if filename == None else f"sourcefile eq '{os.path.basename(filename)}'"
@@ -278,7 +299,8 @@ if __name__ == "__main__":
     parser.add_argument("--storagekey", required=False, help="Optional. Use this Azure Blob Storage account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--tenantid", required=False, help="Optional. Use this to define the Azure directory where to authenticate)")
     parser.add_argument("--searchservice", help="Name of the Azure Cognitive Search service where content should be indexed (must exist already)")
-    parser.add_argument("--index", help="Name of the Azure Cognitive Search index where content should be indexed (will be created if it doesn't exist)")
+    parser.add_argument("--indextext", help="Name of the Azure Cognitive Search index where text content should be indexed (will be created if it doesn't exist)")
+    parser.add_argument("--indexcode", help="Name of the Azure Cognitive Search index where code content should be indexed (will be created if it doesn't exist)")
     parser.add_argument("--searchkey", required=False, help="Optional. Use this Azure Cognitive Search account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--novectors", action="store_true", help="Don't compute embeddings for the sections (e.g. don't call the OpenAI embeddings API during indexing)")
     # Arguments for OpenAI
@@ -305,9 +327,16 @@ if __name__ == "__main__":
     use_vectors = not args.novectors
 
     # Document splitter / Chunking strategy
-    splitter = MarkdownSplitter(openaikey=args.openaikey,
+    markdown_splitter = MarkdownSplitter(openaikey=args.openaikey,
                                 openaiservice=args.openaiservice,
                                 gptdeployment=args.openaigptdeployment)
+    
+    code_splitter = CodeSplitter()
+
+    splitters = {
+        "code": code_splitter,
+        "markdown": markdown_splitter,
+    }
     
     if not args.skipblobs:
         storage_creds = default_creds if args.storagekey == None else args.storagekey
@@ -355,5 +384,5 @@ if __name__ == "__main__":
                 if not args.skipblobs:
                     upload_blobs(filename)
                 page_map = get_document_text(filename)
-                sections = create_sections(os.path.basename(filename), page_map, use_vectors, splitter)
+                sections = create_sections(os.path.basename(filename), page_map, use_vectors, splitters)
                 index_sections(os.path.basename(filename), sections)

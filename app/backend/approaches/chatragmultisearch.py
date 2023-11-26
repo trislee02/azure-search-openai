@@ -142,8 +142,7 @@ Answer: {chat_content}
                                                          max_tokens=self.chatgpt_token_limit, 
                                                          n=1)
         tokens_count = self.__count_tokens(chat_completion)
-        
-        print(f"Requests: {chat_completion.choices[0].message.content}")
+        # print(f"Requests: {chat_completion.choices[0].message.content}")
         extracted_requests = chat_completion.choices[0].message.content.strip().split("\n")
 
         # Check whether no questions found
@@ -216,11 +215,12 @@ Answer: {chat_content}
 
         # STEP 1: Extract main requests in message
         num_tokens, query_texts = self.__extract_main_requests(history=history)
-        
+
         tokens_count += num_tokens
 
         # Check whether no questions found
         if len(query_texts) == 0:
+            print("No request found!")
             user_msg = ChatGeneralPrompt.user_message_template.format(message=history[-1]["user"])  
 
             messages = self.get_messages_from_history(
@@ -231,7 +231,7 @@ Answer: {chat_content}
                 max_tokens=self.chatgpt_token_limit - len(user_msg)
             )
             
-            chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.7, max_tokens=200, n=1)
+            chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.7, max_tokens=self.chatgpt_token_limit, n=1)
             
             chat_content = chat_completion.choices[0].message.content
             
@@ -240,7 +240,6 @@ Answer: {chat_content}
             thoughts = msg_to_display
             final_answer = chat_content
         else:
-            
             for query_text in query_texts:
                 query_text = query_text.strip()
                 if query_text == "":
@@ -307,14 +306,14 @@ Answer: {chat_content}
                                                                         n=1)
                         tokens_count += self.__count_tokens(chat_completion)
                         chat_content = chat_completion.choices[0].message.content
-                        print(f"Revised answer #{tries}: {chat_content}")
+                        # print(f"Revised answer #{tries}: {chat_content}")
 
                     previous_answer = chat_content
                     
                     # Check whether LLM's answer is "I don't know"
                     answer_vector = self.__compute_embedding(previous_answer)
                     no_answer_distance = cosine(ChatVectorComparePrompt.no_answer_embed, answer_vector)
-                    print(f"No answer distance: {no_answer_distance}")
+                    # print(f"No answer distance: {no_answer_distance}")
                     # If LLM says it knows the answer, then run checks
                     if (no_answer_distance > self.THRESHOLD_NO_ANSWER):
                         # Run checks
@@ -322,7 +321,7 @@ Answer: {chat_content}
                         
                         embed_valid = embed_text_checker.check(previous_answer, retrieved_docs, retrieved_doc_embeds, debug_callback)
                         toxicity_valid = self.selfcheck_toxicity(previous_answer)
-                        print("Toxicity valid:", toxicity_valid)
+                        # print("Toxicity valid:", toxicity_valid)
                         is_valid = embed_valid and toxicity_valid
                         tries += 1
                     else:
@@ -339,7 +338,7 @@ Answer: {chat_content}
                 check_logs += answer_for_request
 
                 raw_answer += answer_for_request
-                print(f"Answer for request: {answer_for_request}")
+                # print(f"Answer for request: {answer_for_request}")
 
             user_conv = ChatMultiSearchPrompt.user_content_merge_answer.format(customer_message=history[-1]['user'],
                                                                             raw_answer=raw_answer)
@@ -347,7 +346,7 @@ Answer: {chat_content}
             messages = [{"role":"system","content": ChatMultiSearchPrompt.system_message_merge_answer},
                         {"role":"user","content": user_conv}]
             
-            print(f"Messages: {messages}")
+            # print(f"Messages: {messages}")
 
             chat_completion = self.__compute_chat_completion(messages=messages, 
                                                             temperature=overrides.get("temperature") or 0.0, 
@@ -355,7 +354,7 @@ Answer: {chat_content}
                                                             n=1)
             tokens_count += self.__count_tokens(chat_completion)
             final_answer = chat_completion.choices[0].message.content
-            print(f"Final answer: {final_answer}")
+            # print(f"Final answer: {final_answer}")
 
             contexts = [raw_answer]
 
@@ -369,7 +368,7 @@ Answer: {chat_content}
                 "supporting_contents": all_supporting_contents,
                 "token_usage": tokens_count,
                 "extracted_requests": query_texts,
-                "thoughts": thoughts}
+                "thoughts": thoughts, }
     
     def get_messages_from_history(self, system_prompt: str, model_id: str, history: Sequence[dict[str, str]], user_conv: str, few_shots = [], max_tokens: int = 4096) -> []:
         message_builder = MessageBuilder(system_prompt, model_id)
