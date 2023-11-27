@@ -169,7 +169,10 @@ Answer: {chat_content}
             [],
             ChatMultiSearchPrompt.user_message_template.format(message=history[-1]["user"], chat_history=history_list_str),
             ChatMultiSearchPrompt.few_shots
-        )       
+        )
+
+        print(messages)
+
         chat_completion = self.__compute_chat_completion(messages=messages, 
                                                          temperature=0.0, 
                                                          max_tokens=self.chatgpt_token_limit, 
@@ -315,10 +318,10 @@ Answer: {chat_content}
     
     def __parse_history(self, history: Sequence[dict[str, str]]) -> list[dict]:
         history_list = []
-        for h in history:
+        for h in reversed(history[:-1]):
+            history_list.append({self.USER: h.get("user")})
             if h.get("bot"):
                 history_list.append({self.ASSISTANT: h.get("bot")})
-            history_list.append({self.USER: h.get("user")})
         return history_list
 
     def format_display_message(self, list_messages: list = None, text: str = "") -> str:
