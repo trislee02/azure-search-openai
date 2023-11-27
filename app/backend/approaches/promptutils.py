@@ -262,33 +262,78 @@ class ChatMultiSearchPrompt:
 
     system_message = """Based on the conversation history, extract requests needed to be responded in the latest message. Include the scenario in all requests if it provides clear context.
 Return the list of found questions ONLY. Do not use numbering, bullet points, introduction and titles.
-One line per request and associated scenario.
-If no requests found, return "0" only and do not explain anything else.
-"""
+Return each request and associated scenario on one line.
+If no requests found, return "0" only and do not explain anything else."""
 
-    user_message_template = """Recent customer's message:
+    user_message_template = """Chat history:
+{chat_history}
+Customer message:
 ```
 {message}
-```"""
+```
+Extracted requests:"""
+
+#     few_shots = [
+#         {'role' : USER, 'content' : """Recent customer's message:
+# ```
+# I have got an issue with my program. My screen turned blue after running the command 'avz hello-world.ccs'. But when I restarted the computer, the program was launched at start up. What is causing the issue and how can I resolve this issue?
+# ```""" },
+#         {'role' : ASSISTANT, 'content' : """The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. How to resolve this issue?
+# The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. What is causing this issue?""" },
+#         {'role' : USER, 'content' : """Recent customer's message:
+# ```
+# What does the command do? Are there any other commands to do that?
+# ```""" },
+#         {'role' : ASSISTANT, 'content' : """What does the command 'avz hello-world.ccs' do?
+# Are there any other commands to do the same thing as the command 'avz hello-world.ccs' does?""" },
+#         {'role' : USER, 'content' : """Recent customer's message:
+# ```
+# Please provide me with a Python source code to print out a series of number
+# ```""" },
+#         {'role' : ASSISTANT, 'content' : """Please provide me with a Python source code to print out a series of number""" },
+#     ]
 
     few_shots = [
-        {'role' : USER, 'content' : """Recent customer's message:
+        {'role': USER,
+         'content': """Chat history: (Empty)
+Customer message:
 ```
 I have got an issue with my program. My screen turned blue after running the command 'avz hello-world.ccs'. But when I restarted the computer, the program was launched at start up. What is causing the issue and how can I resolve this issue?
-```""" },
-        {'role' : ASSISTANT, 'content' : """The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. How to resolve this issue?
-The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. What is causing this issue?""" },
-        {'role' : USER, 'content' : """Recent customer's message:
+```
+Extracted requests:"""},
+
+        {'role': ASSISTANT,
+         'content': """The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. How to resolve this issue?
+The screen turned blue after running the command 'avz hello-world.ccs'. But when restarting the computer, the program was launched at start up. What is causing this issue?"""},
+
+        {'role': USER,
+         'content': """Chat history:
+[{"role": "user", "content": "I have got an issue with my program. My screen turned blue after running the command 'avz hello-world.ccs'. But when I restarted the computer, the program was launched at start up. What is causing the issue and how can I resolve this issue?"},
+{"role": "assistant", "content": "Hi, you just need to restart the computer. The low memory is causing this error"}]
+Customer message:
 ```
 What does the command do? Are there any other commands to do that?
-```""" },
-        {'role' : ASSISTANT, 'content' : """What does the command 'avz hello-world.ccs' do?
-Are there any other commands to do the same thing as the command 'avz hello-world.ccs' does?""" },
-        {'role' : USER, 'content' : """Recent customer's message:
+```
+Extracted requests:"""},
+
+         {'role': ASSISTANT,
+         'content': """What does the command 'avz hello-world.ccs' do?
+Are there any other commands to do the same thing as the command 'avz hello-world.ccs' does?"""},
+
+         {'role': USER,
+         'content': """Chat history:
+[{"role": "user", "content": "I have got an issue with my program. My screen turned blue after running the command 'avz hello-world.ccs'. But when I restarted the computer, the program was launched at start up. What is causing the issue and how can I resolve this issue?"},
+{"role": "assistant", "content": "Hi, you just need to restart the computer. The low memory is causing this error"},
+{"role": "user", "content": "What does the command do? Are there any other commands to do that?"},
+{"role": "assistant", "content": "The command will print out to the screen a welcome message. There is no other command to do the same thing"}]
+Customer message:
 ```
 Please provide me with a Python source code to print out a series of number
-```""" },
-        {'role' : ASSISTANT, 'content' : """Please provide me with a Python source code to print out a series of number""" },
+```
+Extracted requests:"""},
+
+         {'role': ASSISTANT,
+         'content': """Please provide me with a Python source code to print out a series of number"""},
     ]
 
     system_message_merge_answer = """You are a LuxAI support team member answering the customers questions about company's QTrobot.

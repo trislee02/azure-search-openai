@@ -106,7 +106,7 @@ Answer: {chat_content}
     def before_retry_sleep(retry_state):
         print(f"Rate limited on the OpenAI API, sleeping before retrying...")
 
-    # @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
         completion = None
         max_tokens = max_tokens - num_tokens_from_chat_messages(messages=messages, model=self.chatgpt_model)
@@ -158,18 +158,23 @@ Answer: {chat_content}
         return vector
 
     def __extract_main_requests(self, history: Sequence[dict[str, str]]) -> list[str]:
+
+        history_list = self.__parse_history(history)
+
+        history_list_str = json.dumps(history_list)
+
         messages = self.get_messages_from_history(
             ChatMultiSearchPrompt.system_message,
             self.chatgpt_model,
-            history,
-            ChatMultiSearchPrompt.user_message_template.format(message=history[-1]["user"]),
+            [],
+            ChatMultiSearchPrompt.user_message_template.format(message=history[-1]["user"], chat_history=history_list_str),
             ChatMultiSearchPrompt.few_shots
-        )
+        )       
         chat_completion = self.__compute_chat_completion(messages=messages, 
                                                          temperature=0.0, 
                                                          max_tokens=self.chatgpt_token_limit, 
                                                          n=1)
-        print(chat_completion)
+
         tokens_count = self.__count_tokens(chat_completion)
         extracted_requests = chat_completion.choices[0].message.content.strip().split("\n")
 
@@ -221,6 +226,7 @@ Answer: {chat_content}
             thoughts = self.format_display_message(messages)
         else:
             for request in extracted_requests:
+                print(f"Length of extracted_request: {len(extracted_requests)}")
                 request = request.strip()
                 if request == "":
                     continue
@@ -242,10 +248,10 @@ Answer: {chat_content}
                     print(f"Request: {request}")
                     sub_rag = sub_rags_stack.pop(0)
 
-                    sub_answer = sub_rag.run(history, overrides, request)
+                    sub_answer = sub_rag.run(history, overrides, query_text=request)
 
                 if sub_answer["answer"] == "":
-                    sub_answer = ChatVectorComparePrompt.book_a_meeting_message
+                    sub_answer["answer"] = ChatVectorComparePrompt.book_a_meeting_message
 
                 request_answer = self.LOG_ANSWER_FOR_REQUEST.format(query_text=request, chat_content=sub_answer["answer"])
                 all_answers += request_answer
@@ -307,6 +313,14 @@ Answer: {chat_content}
         messages = message_builder.messages
         return messages
     
+    def __parse_history(self, history: Sequence[dict[str, str]]) -> list[dict]:
+        history_list = []
+        for h in history:
+            if h.get("bot"):
+                history_list.append({self.ASSISTANT: h.get("bot")})
+            history_list.append({self.USER: h.get("user")})
+        return history_list
+
     def format_display_message(self, list_messages: list = None, text: str = "") -> str:
         msg_to_display = text
         if list_messages:

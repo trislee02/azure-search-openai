@@ -68,7 +68,7 @@ Answer: {chat_content}
     def before_retry_sleep(retry_state):
         print(f"Rate limited on the OpenAI API, sleeping before retrying...")
 
-    # @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
         completion = None
         max_tokens = max_tokens - num_tokens_from_chat_messages(messages=messages, model=self.chatgpt_model)

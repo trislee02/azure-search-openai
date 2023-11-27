@@ -24,28 +24,12 @@ export function parseAnswerToHtml(answer: string, onCitationClicked: (citationFi
     const parts = parsedAnswer.split(/(\[([^\]]+)\])|(```.*?```)/gs); // Worked
     // const parts = parsedAnswer.split(/(?:`{3}[\s\S]*?`{3}|(\[[^\[\]]+\]))/gs);
 
-    const fragments: string[] = parts.map((part, index) => {
+    var isCitation = false;
+
+    const fragments = parts.map((part, index) => {
         console.log(part);
         if (part && part[0] === "[") {
-            let citationIndex: number;
-            var refinedPart = part.match(/(?<=\[)(.*?)(?=\])/g);
-            var source = "";
-            if (refinedPart) source = refinedPart[0];
-
-            if (citations.indexOf(source) !== -1) {
-                citationIndex = citations.indexOf(source) + 1;
-            } else {
-                citations.push(source);
-                citationIndex = citations.length;
-            }
-
-            const path = getCitationFilePath(source);
-
-            return renderToStaticMarkup(
-                <a className="supContainer" title={source} onClick={() => onCitationClicked(path)}>
-                    <sup>{citationIndex}</sup>
-                </a>
-            );
+            isCitation = true;
         } else if (part && part[0] === "`") {
             return renderToStaticMarkup(
                 <pre>
@@ -53,7 +37,28 @@ export function parseAnswerToHtml(answer: string, onCitationClicked: (citationFi
                 </pre>
             );
         } else {
-            return part;
+            if (isCitation) {
+                isCitation = false;
+                let citationIndex: number;
+                var source = part;
+
+                if (citations.indexOf(source) !== -1) {
+                    citationIndex = citations.indexOf(source) + 1;
+                } else {
+                    citations.push(source);
+                    citationIndex = citations.length;
+                }
+
+                const path = getCitationFilePath(source);
+
+                return renderToStaticMarkup(
+                    <a className="supContainer" title={source} onClick={() => onCitationClicked(path)}>
+                        <sup>{citationIndex}</sup>
+                    </a>
+                );
+            } else {
+                return part;
+            }
         }
     });
 
