@@ -27,6 +27,7 @@ class ChatMessageAction:
     AZURE_SEARCH_SERVICE = os.environ.get("AZURE_SEARCH_SERVICE") or "gptkb"
     AZURE_SEARCH_INDEX_TEXT = os.environ.get("AZURE_SEARCH_INDEX_TEXT") or "gptkbindex-text"
     AZURE_SEARCH_INDEX_CODE = os.environ.get("AZURE_SEARCH_INDEX_CODE") or "gptkbindex-code"
+    AZURE_SEARCH_INDEX_ROS = os.environ.get("AZURE_SEARCH_INDEX_ROS") or "gptkbindex-ros"
 
     KB_FIELDS_CONTENT = os.environ.get("KB_FIELDS_CONTENT") or "content"
     KB_FIELDS_EMBEDDING = os.environ.get("KB_FIELDS_EMBEDDING") or "embedding"
@@ -86,6 +87,10 @@ class ChatMessageAction:
         endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
         index_name=AZURE_SEARCH_INDEX_CODE,
         credential=search_creds)
+    search_client_ros = SearchClient(
+        endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
+        index_name=AZURE_SEARCH_INDEX_ROS,
+        credential=search_creds)
     blob_client = BlobServiceClient(
         account_url=f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net", 
         credential=storage_creds)
@@ -94,6 +99,7 @@ class ChatMessageAction:
     search_clients = {
         "text": search_client,
         "code": search_client_code,
+        "ros": search_client_ros,
     }
 
 

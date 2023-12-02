@@ -154,12 +154,12 @@ def get_document_text(filename):
 
     elif os.path.splitext(filename)[1].lower() == ".md" or os.path.splitext(filename)[1].lower() == ".txt":
         with open(filename, "rb") as f:
-            content = f.read().decode('utf-8')
+            content = f.read().decode('utf-8', 'ignore')
             content = clean_html_text(content)
             page_map.append((0, offset, content))
     elif os.path.splitext(filename)[1].lower() == ".py" or os.path.splitext(filename)[1].lower() == ".cpp":
         with open(filename, "rb") as f:
-            content = f.read().decode('utf-8')
+            content = f.read().decode('utf-8', 'ignore')
             page_map.append((0, offset, content))
 
     return page_map
@@ -186,7 +186,7 @@ def create_sections(filename, page_map, use_vectors, splitters: dict[str, Splitt
         }
         if use_vectors:
             section["embedding"] = compute_embedding(content)
-        if args.verbose: print(f"Content:\n{content}")
+        if args.verbose: print(f"Content:\n{content}\n%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%5")
         yield section
 
 def before_retry_sleep(retry_state):
@@ -385,6 +385,6 @@ if __name__ == "__main__":
                 #     upload_blobs(filename)
                 page_map = get_document_text(filename)
                 sections = create_sections(os.path.basename(filename), page_map, use_vectors, splitters)
-                # for s in sections:
-                #     pass
-                index_sections(os.path.basename(filename), sections)
+                for s in sections:
+                    pass
+                # index_sections(os.path.basename(filename), sections)

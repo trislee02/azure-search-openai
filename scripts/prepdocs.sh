@@ -1,6 +1,6 @@
  #!/bin/sh
 
-MAIN_FILE="prepdocs_test.py"
+MAIN_FILE="prepdocs.py"
 
 echo ""
 echo "Loading azd .env file from current environment"

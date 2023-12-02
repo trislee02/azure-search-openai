@@ -154,12 +154,12 @@ def get_document_text(filename):
 
     elif os.path.splitext(filename)[1].lower() == ".md" or os.path.splitext(filename)[1].lower() == ".txt":
         with open(filename, "rb") as f:
-            content = f.read().decode('utf-8')
+            content = f.read().decode('utf-8', 'ignore')
             content = clean_html_text(content)
             page_map.append((0, offset, content))
     elif os.path.splitext(filename)[1].lower() == ".py" or os.path.splitext(filename)[1].lower() == ".cpp":
         with open(filename, "rb") as f:
-            content = f.read().decode('utf-8')
+            content = f.read().decode('utf-8', 'ignore')
             page_map.append((0, offset, content))
 
     return page_map

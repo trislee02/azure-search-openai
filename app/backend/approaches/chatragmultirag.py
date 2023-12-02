@@ -35,6 +35,7 @@ class ChatRAGMultiRAGApproach(Approach):
     class RAGIntent:
         TEXT = "text"
         CODE = "code"
+        ROS = "ros"
 
     # Chat roles
     SYSTEM = "system"
@@ -52,6 +53,10 @@ Answer: {chat_content}
 
     MAX_TRY = 3
 
+    DISCLAIMER_FOR_PLAIN_LLM = """
+This is LLM-self generated answer based on pre-existing knowledge, not directly related to LuxAI document.
+"""
+
     def __init__(self, 
                  search_clients: defaultdict[SearchClient],
                  sourcepage_field: str, 
@@ -68,6 +73,7 @@ Answer: {chat_content}
         
         self.search_client_code = search_clients["code"]
         self.search_client_text = search_clients["text"]
+        self.search_client_ros = search_clients["ros"]
 
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
@@ -81,7 +87,7 @@ Answer: {chat_content}
         self.completion_model = completion_model
 
         self.sub_rags = {
-            "code": SubRAGCode(search_client=self.search_client_code, 
+            self.RAGIntent.CODE: SubRAGCode(search_client=self.search_client_code, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -91,7 +97,7 @@ Answer: {chat_content}
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
-            "text": SubRAGText(search_client=self.search_client_text, 
+            self.RAGIntent.TEXT: SubRAGText(search_client=self.search_client_text, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -100,7 +106,17 @@ Answer: {chat_content}
                                chatgpt_deployment=chatgpt_deployment,
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
-                               completion_model=completion_model)
+                               completion_model=completion_model),
+            self.RAGIntent.ROS: SubRAGText(search_client=self.search_client_ros, 
+                               sourcepage_field=sourcepage_field,
+                               content_field=content_field,
+                               embedding_field=embedding_field,
+                               chatgpt_model=chatgpt_model,
+                               embed_model=embed_model,
+                               chatgpt_deployment=chatgpt_deployment,
+                               embedding_deployment=embedding_deployment,
+                               completion_deployment=completion_deployment,
+                               completion_model=completion_model),
         }
 
     def before_retry_sleep(retry_state):
@@ -208,26 +224,14 @@ Answer: {chat_content}
         extracted_requests = []
         thoughts = ""
 
+        has_answer = False
+
         # STEP 1: Extract requests in message
         num_tokens, extracted_requests = self.__extract_main_requests(history=history)
         tokens_count += num_tokens
 
         # Check whether no questions found
-        if len(extracted_requests) == 0:
-            print("No request found!")
-            user_msg = ChatGeneralPrompt.user_message_template.format(message=history[-1]["user"])  
-
-            messages = self.get_messages_from_history(
-                system_prompt=ChatGeneralPrompt.system_message,
-                model_id=self.chatgpt_model,
-                history=history,
-                user_conv=user_msg,
-                max_tokens=self.chatgpt_token_limit - len(user_msg))            
-
-            chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.7, max_tokens=self.chatgpt_token_limit, n=1)
-            final_answer = chat_completion.choices[0].message.content            
-            thoughts = self.format_display_message(messages)
-        else:
+        if len(extracted_requests) > 0:
             for request in extracted_requests:
                 print(f"Length of extracted_request: {len(extracted_requests)}")
                 request = request.strip()
@@ -241,8 +245,10 @@ Answer: {chat_content}
                 if request_intent == self.RAGIntent.CODE:
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.TEXT])
+                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
                 else:
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.TEXT])
+                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
 
                 sub_answer = {}
@@ -255,6 +261,8 @@ Answer: {chat_content}
 
                 if sub_answer["answer"] == "":
                     sub_answer["answer"] = ChatVectorComparePrompt.book_a_meeting_message
+                else:
+                    has_answer = True
 
                 request_answer = self.LOG_ANSWER_FOR_REQUEST.format(query_text=request, chat_content=sub_answer["answer"])
                 all_answers += request_answer
@@ -285,6 +293,22 @@ Answer: {chat_content}
             # msg_to_display = self.format_display_message(messages)
             # msg_to_display = self.format_display_message(text=msg_to_display)
             thoughts = self.format_display_message(text=thoughts)
+
+        if len(extracted_requests) == 0 or not has_answer:
+            print("No request or answer found!")
+            user_msg = ChatGeneralPrompt.user_message_template.format(message=history[-1]["user"])  
+
+            messages = self.get_messages_from_history(
+                system_prompt=ChatGeneralPrompt.system_message,
+                model_id=self.chatgpt_model,
+                history=history,
+                user_conv=user_msg,
+                max_tokens=self.chatgpt_token_limit - len(user_msg))            
+
+            chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.7, max_tokens=self.chatgpt_token_limit, n=1)
+            final_answer = chat_completion.choices[0].message.content            
+            final_answer += "\n" + self.DISCLAIMER_FOR_PLAIN_LLM
+            thoughts = self.format_display_message(messages)
 
         return {"data_points": retrieved_docs, 
                 "answer": final_answer,
