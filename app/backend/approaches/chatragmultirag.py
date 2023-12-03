@@ -224,6 +224,8 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         extracted_requests = []
         thoughts = ""
 
+        overrides["retrieval_mode"] = "vectors"
+
         has_answer = False
 
         # STEP 1: Extract requests in message
@@ -309,6 +311,8 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
             final_answer = chat_completion.choices[0].message.content            
             final_answer += "\n" + self.DISCLAIMER_FOR_PLAIN_LLM
             thoughts = self.format_display_message(messages)
+            contexts = []
+            all_supporting_contents = ""
 
         return {"data_points": retrieved_docs, 
                 "answer": final_answer,

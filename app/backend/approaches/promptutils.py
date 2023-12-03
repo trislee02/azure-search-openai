@@ -260,7 +260,7 @@ class ChatMultiSearchPrompt:
 # If no questions found, return "0" only and do not explain anything else.
 # """
 # Return the list of found questions ONLY. Do not use numbering, bullet points, introduction and titles.
-    system_message = """Based on the conversation history, extract requests/questions in the customer message and summarize the context of them for others to understand without requiring reading the conversation history and message.
+    system_message = """Based on the conversation history, extract explicit requests/questions in the customer message and summarize the context of them for others to understand without requiring reading the conversation history and message.
 Each request/question must be independent from others.
 Separate each request/question and the summary of its context by a new line. Do not write more than one request/question in one line.
 If no requests found, return "0" only and do not explain anything else."""
