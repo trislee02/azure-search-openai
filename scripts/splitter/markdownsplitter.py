@@ -1,9 +1,42 @@
 import re
 import openai
+import utils
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 from splitter.splitter import Splitter
+from document.Document import Document
+
+def clean_html_text(text):
+    re_html = re.compile(r'<[^>]+>')
+    cleaned_text = re_html.sub('', text)
+    cleaned_text = cleaned_text.replace("&nbsp;", "")
+    return cleaned_text
+
+def clean_special_character(text: str) -> str:
+    cleaned_text = text.replace("\\n", "\n").replace("\\t", "\t")
+    return cleaned_text
+
+def get_code_blocks(text: str) -> dict:
+    """
+    Find all code blocks inside triple backsticks (```) pairs.
+    Return a dictionary with starting index as key and code block as value.
+    """
+    pattern = r"```([^`]+)```"
+    matches = re.finditer(pattern, text)
+
+    matches_with_indices = {}
+
+    for match in matches:
+        match_text = match.group()
+        start_index = match.start()
+        matches_with_indices[start_index] = match_text
+
+    return matches_with_indices
 
 class MarkdownSplitter(Splitter):
+    MAX_SECTION_LENGTH = 1000
+    SENTENCE_SEARCH_LIMIT = 100
+    SECTION_OVERLAP = 100
+        
     def __init__(self, openaiapikey: str = None, openaikey: str = "", openaiservice: str = "", gptdeployment: str = ""):
         self.gptdeployment = gptdeployment
         if openaiapikey:
@@ -14,36 +47,47 @@ class MarkdownSplitter(Splitter):
             openai.api_base = f"https://{openaiservice}.openai.azure.com"
             openai.api_version = "2023-07-01-preview"
 
-    MAX_SECTION_LENGTH = 1000
-    SENTENCE_SEARCH_LIMIT = 100
-    SECTION_OVERLAP = 100
+    def load(self, filename: str) -> list[Document]:
+        with open(filename, "r", encoding="utf-8") as f:
+            content = f.read()
+            content = clean_html_text(content)
+            document = Document(content=content)
+            return [document]
 
-    def __get_code_blocks(self, text: str) -> dict:
-        """
-        Find all code blocks inside triple backsticks (```) pairs.
-        Return a dictionary with starting index as key and code block as value.
-        """
-        pattern = r"```([^`]+)```"
-        matches = re.finditer(pattern, text)
+    def split(self, documents: list[Document]) -> list[Document]:
+        splits = []
+        
+        summary = ""
+        all_text = "".join(doc.content for doc in documents)
+        all_text = clean_html_text(all_text)
+        all_text = clean_special_character(all_text)
 
-        matches_with_indices = {}
+        segments = self.__split_markdown_heading(all_text)
 
-        for match in matches:
-            match_text = match.group()
-            start_index = match.start()
-            matches_with_indices[start_index] = match_text
+        for seg in segments:    
+            for part in self.__split_by_breaks(seg):
+                if summary == "":
+                    document = Document(content=part[0])
+                    summary = self.__generate_summary(part[0], "")
+                else:
+                    summary = self.__generate_summary(part[0], summary)
+                    document = Document(content=f"{summary}\n{part[0]}")
+                splits.append(document)
+                    
+        return splits
 
-        return matches_with_indices
 
-    def __clean_html_text(self, text: str) -> str:
-        re_html = re.compile(r'<[^>]+>')
-        cleaned_text = re_html.sub('', text)
-        cleaned_text = cleaned_text.replace("&nbsp;", "")
-        return cleaned_text
-    
-    def __clean_special_character(self, text: str) -> str:
-        cleaned_text = text.replace("\\n", "\n").replace("\\t", "\t")
-        return cleaned_text
+    def create_section(self, filename: str, documents: list[Document]):
+        file_id = utils.filename_to_id(filename)
+
+        for i, doc in enumerate(documents):
+            section = {
+                "id": f"{file_id}-page-{i}",
+                "content": doc.content,
+                "sourcefile": filename,
+                "embedding": utils.compute_embedding(self.azure_openai_embed_deployment, doc.content)
+            }
+            yield section  
 
     def __split_markdown_heading(self, text: str) -> list:
         """
@@ -54,12 +98,12 @@ class MarkdownSplitter(Splitter):
         pattern = r"(?<!`)(?:^|\n)(?:#|##|###)(?![^`]*```[^`]*$)"
         segments = re.split(pattern, text, 0, re.MULTILINE)
         segments = [segment.strip() for segment in segments if segment.strip()]
-        segments_str = "\n=============\n".join(segments)
-        print(f"""Segments:
-{segments_str}
+#         segments_str = "\n=============\n".join(segments)
+#         print(f"""Segments:
+# {segments_str}
 
-*****************************
-""")
+# *****************************
+# """)
 
         return segments
 
@@ -79,7 +123,7 @@ class MarkdownSplitter(Splitter):
         SENTENCE_ENDINGS = [".", "!", "?"]
         WORDS_BREAKS = [",", ";", ":", " ", "(", ")", "[", "]", "{", "}", "\t", "\n"]
 
-        code_blocks = self.__get_code_blocks(all_text)
+        code_blocks = get_code_blocks(all_text)
         code_block_indexes = sorted(code_blocks.keys())
 
         length = len(all_text)
@@ -165,29 +209,3 @@ Introduction for the current part:"""
                                                 stop=None)
 
         return response.choices[0].message.content
-
-    def split_text(self, page_map):
-        def find_page(offset):
-            l = len(page_map)
-            for i in range(l - 1):
-                if offset >= page_map[i][1] and offset < page_map[i + 1][1]:
-                    return i
-            return l - 1
-
-        summary = ""
-
-        all_text = "".join(p[2] for p in page_map)
-
-        all_text = self.__clean_html_text(all_text)
-        all_text = self.__clean_special_character(all_text)
-
-        segments = self.__split_markdown_heading(all_text)
-
-        for seg in segments:    
-            for part in self.__split_by_breaks(seg):
-                if summary == "":
-                    yield(part[0], find_page(part[1]))
-                    summary = self.__generate_summary(part[0], "")
-                else:
-                    summary = self.__generate_summary(part[0], summary)
-                    yield(f"{summary}\n{part[0]}", find_page(part[1]))

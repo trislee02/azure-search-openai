@@ -34,6 +34,7 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fi
 from splitter.splitter import Splitter
 from splitter.markdownsplitter import MarkdownSplitter
 from splitter.codesplitter import CodeSplitter
+from splitter.emailsplitter import EmailSplitter
 
 MAX_SECTION_LENGTH = 1000
 SENTENCE_SEARCH_LIMIT = 100
@@ -84,110 +85,10 @@ def remove_blobs(filename):
             if args.verbose: print(f"\tRemoving blob {b}")
             blob_container.delete_blob(b)
 
-def table_to_html(table):
-    table_html = "<table>"
-    rows = [sorted([cell for cell in table.cells if cell.row_index == i], key=lambda cell: cell.column_index) for i in range(table.row_count)]
-    for row_cells in rows:
-        table_html += "<tr>"
-        for cell in row_cells:
-            tag = "th" if (cell.kind == "columnHeader" or cell.kind == "rowHeader") else "td"
-            cell_spans = ""
-            if cell.column_span > 1: cell_spans += f" colSpan={cell.column_span}"
-            if cell.row_span > 1: cell_spans += f" rowSpan={cell.row_span}"
-            table_html += f"<{tag}{cell_spans}>{html.escape(cell.content)}</{tag}>"
-        table_html +="</tr>"
-    table_html += "</table>"
-    return table_html
+def load_and_split(filename: str, splitters: dict[str, Splitter]) -> dict:
+    
 
-def clean_html_text(text):
-    re_html = re.compile(r'<[^>]+>')
-    cleaned_text = re_html.sub('', text)
-    cleaned_text = cleaned_text.replace("&nbsp;", "")
-    return cleaned_text
-
-def get_document_text(filename):
-    offset = 0
-    page_map = []
-    if os.path.splitext(filename)[1].lower() == ".pdf":
-        if args.localpdfparser:
-            reader = PdfReader(filename)
-            pages = reader.pages
-            for page_num, p in enumerate(pages):
-                page_text = p.extract_text()
-                page_map.append((page_num, offset, page_text))
-                offset += len(page_text)
-        else:
-            if args.verbose: print(f"Extracting text from '{filename}' using Azure Form Recognizer")
-            form_recognizer_client = DocumentAnalysisClient(endpoint=f"https://{args.formrecognizerservice}.cognitiveservices.azure.com/", credential=formrecognizer_creds, headers={"x-ms-useragent": "azure-search-chat-demo/1.0.0"})
-            with open(filename, "rb") as f:
-                poller = form_recognizer_client.begin_analyze_document("prebuilt-layout", document = f)
-            form_recognizer_results = poller.result()
-
-            for page_num, page in enumerate(form_recognizer_results.pages):
-                tables_on_page = [table for table in form_recognizer_results.tables if table.bounding_regions[0].page_number == page_num + 1]
-
-                # mark all positions of the table spans in the page
-                page_offset = page.spans[0].offset
-                page_length = page.spans[0].length
-                table_chars = [-1]*page_length
-                for table_id, table in enumerate(tables_on_page):
-                    for span in table.spans:
-                        # replace all table spans with "table_id" in table_chars array
-                        for i in range(span.length):
-                            idx = span.offset - page_offset + i
-                            if idx >=0 and idx < page_length:
-                                table_chars[idx] = table_id
-
-                # build page text by replacing charcters in table spans with table html
-                page_text = ""
-                added_tables = set()
-                for idx, table_id in enumerate(table_chars):
-                    if table_id == -1:
-                        page_text += form_recognizer_results.content[page_offset + idx]
-                    elif not table_id in added_tables:
-                        page_text += table_to_html(tables_on_page[table_id])
-                        added_tables.add(table_id)
-
-                page_text += " "
-                page_map.append((page_num, offset, page_text))
-                offset += len(page_text)
-
-    elif os.path.splitext(filename)[1].lower() == ".md" or os.path.splitext(filename)[1].lower() == ".txt":
-        with open(filename, "rb") as f:
-            content = f.read().decode('utf-8', 'ignore')
-            content = clean_html_text(content)
-            page_map.append((0, offset, content))
-    elif os.path.splitext(filename)[1].lower() == ".py" or os.path.splitext(filename)[1].lower() == ".cpp":
-        with open(filename, "rb") as f:
-            content = f.read().decode('utf-8', 'ignore')
-            page_map.append((0, offset, content))
-
-    return page_map
-
-def filename_to_id(filename):
-    filename_ascii = re.sub("[^0-9a-zA-Z_-]", "_", filename)
-    filename_hash = base64.b16encode(filename.encode('utf-8')).decode('ascii')
-    return f"file-{filename_ascii}-{filename_hash}"
-
-def create_sections(filename, page_map, use_vectors, splitters: dict[str, Splitter]):
-    file_id = filename_to_id(filename)
-    if filename.endswith(".py"):
-        splitter = splitters["code"]
-    else:
-        splitter = splitters["markdown"]
-
-    for i, (content, pagenum) in enumerate(splitter.split_text(page_map)):
-        section = {
-            "id": f"{file_id}-page-{i}",
-            "content": content,
-            "category": args.category,
-            "sourcepage": blob_name_from_file_page(filename, pagenum),
-            "sourcefile": filename
-        }
-        if use_vectors:
-            section["embedding"] = compute_embedding(content)
-        if args.verbose: print(f"Content:\n{content}")
-        yield section
+    return splitter.load_and_split(filename)
 
 def before_retry_sleep(retry_state):
     if args.verbose: print(f"Rate limited on the OpenAI embeddings API, sleeping before retrying...")
@@ -213,7 +114,8 @@ def check_index_exist(index_client, index_name):
                             vector_search_dimensions=1536, vector_search_configuration="default"),
                 SimpleField(name="category", type="Edm.String", filterable=True, facetable=True),
                 SimpleField(name="sourcepage", type="Edm.String", filterable=True, facetable=True),
-                SimpleField(name="sourcefile", type="Edm.String", filterable=True, facetable=True)
+                SimpleField(name="sourcefile", type="Edm.String", filterable=True, facetable=True),
+                SimpleField(name="metadata", type="Edm.String", filterable=True, facetable=True)
             ],
             semantic_settings=SemanticSettings(
                 configurations=[SemanticConfiguration(
@@ -332,11 +234,7 @@ if __name__ == "__main__":
                                 gptdeployment=args.openaigptdeployment)
     
     code_splitter = CodeSplitter()
-
-    splitters = {
-        "code": code_splitter,
-        "markdown": markdown_splitter,
-    }
+    email_splitter = EmailSplitter()
     
     if not args.skipblobs:
         storage_creds = default_creds if args.storagekey == None else args.storagekey
@@ -381,8 +279,21 @@ if __name__ == "__main__":
                 remove_blobs(None)
                 remove_from_index(None)
             else:
-                if not args.skipblobs:
-                    upload_blobs(filename)
-                page_map = get_document_text(filename)
-                sections = create_sections(os.path.basename(filename), page_map, use_vectors, splitters)
-                index_sections(os.path.basename(filename), sections)
+                # if not args.skipblobs:
+                #     upload_blobs(filename)
+                # page_map = get_document_text(filename)
+                if filename.endswith(".py"):
+                    splitter = code_splitter
+                elif filename.endswith(".md"):
+                    splitter = markdown_splitter
+                else:
+                    splitter = email_splitter
+                
+                splits = splitter.load_and_split(filename)
+                for s in splits:
+                    print(s.content)
+                    print("++++ END CONTENT ++++")
+                    print(s.metadata)
+                    print("===========END SPLIT=========")
+                # sections = splitter.create_section(filename, splits)
+                # index_sections(os.path.basename(filename), sections)
