@@ -31,8 +31,8 @@ class ChatMessageAction:
 
     KB_FIELDS_CONTENT = os.environ.get("KB_FIELDS_CONTENT") or "content"
     KB_FIELDS_EMBEDDING = os.environ.get("KB_FIELDS_EMBEDDING") or "embedding"
-    KB_FIELDS_CATEGORY = os.environ.get("KB_FIELDS_CATEGORY") or "category"
-    KB_FIELDS_SOURCEPAGE = os.environ.get("KB_FIELDS_SOURCEPAGE") or "sourcepage"
+    KB_FIELDS_PREFIX = os.environ.get("KB_FIELDS_PREFIX") or "prefix"
+    KB_FIELDS_SOURCEPAGE = os.environ.get("KB_FIELDS_SOURCEPAGE") or "sourcefile"
 
     # Constants for OPENAI API
     # Add these azd environment in Configuration section of the App service on Azure Portal
@@ -144,6 +144,7 @@ class ChatMessageAction:
                                       KB_FIELDS_SOURCEPAGE, 
                                       KB_FIELDS_CONTENT,
                                       KB_FIELDS_EMBEDDING,
+                                      KB_FIELDS_PREFIX,
                                       chatgpt_deployment=AZURE_OPENAI_CHATGPT_DEPLOYMENT,
                                       chatgpt_model=AZURE_OPENAI_CHATGPT_MODEL,
                                       embedding_deployment=AZURE_OPENAI_EMB_DEPLOYMENT,

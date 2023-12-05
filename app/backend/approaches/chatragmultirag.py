@@ -62,6 +62,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                  sourcepage_field: str, 
                  content_field: str,
                  embedding_field: str,
+                 prefix_field: str,
                  chatgpt_model = "", 
                  embed_model = "", 
                  chatgpt_deployment = "", 
@@ -78,6 +79,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
         self.embedding_field = embedding_field
+        self.prefix_field = prefix_field
         self.embed_model = embed_model
         self.chatgpt_deployment = chatgpt_deployment
         self.chatgpt_model = chatgpt_model
@@ -101,6 +103,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
+                               prefix_field=prefix_field,
                                chatgpt_model=chatgpt_model,
                                embed_model=embed_model,
                                chatgpt_deployment=chatgpt_deployment,
@@ -111,6 +114,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
+                               prefix_field=prefix_field,
                                chatgpt_model=chatgpt_model,
                                embed_model=embed_model,
                                chatgpt_deployment=chatgpt_deployment,

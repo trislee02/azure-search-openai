@@ -45,6 +45,7 @@ Answer: {chat_content}
                  sourcepage_field: str, 
                  content_field: str,
                  embedding_field: str,
+                 prefix_field: str,
                  chatgpt_model = "", 
                  embed_model = "", 
                  chatgpt_deployment = "", 
@@ -57,6 +58,7 @@ Answer: {chat_content}
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
         self.embedding_field = embedding_field
+        self.prefix_field = prefix_field
         self.embed_model = embed_model
         self.chatgpt_deployment = chatgpt_deployment
         self.chatgpt_model = chatgpt_model
@@ -64,6 +66,7 @@ Answer: {chat_content}
         self.chatgpt_token_limit = get_token_limit(chatgpt_model)
         self.completion_deployment = completion_deployment
         self.completion_model = completion_model
+
 
     def before_retry_sleep(retry_state):
         print(f"Rate limited on the OpenAI API, sleeping before retrying...")
@@ -163,7 +166,7 @@ Answer: {chat_content}
             if use_semantic_captions:
                 doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
             else:
-                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field])
+                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.prefix_field]) + "\n" + nonewlines(doc[self.content_field])
             doc_vector = doc[self.embedding_field]
             
             retrieved_docs.append(doc_content)
