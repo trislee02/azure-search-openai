@@ -1,2 +1,4 @@
 def nonewlines(s: str) -> str:
-    return s.replace('\r', ' ')#.replace('\n', ' ')
+    if s:
+        return s.replace('\r', ' ')#.replace('\n', ' ')
+    return ""
