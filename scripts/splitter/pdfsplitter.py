@@ -158,6 +158,6 @@ class PdfSplitter(Splitter):
                 "content": doc.content,
                 # "sourcepage": blob_name_from_file_page(filename, pagenum),
                 "sourcefile": filename,
-                "embedding": utils.compute_embedding(self.azure_openai_embed_deployment, doc.content)
+                "embedding": utils.compute_embedding(doc.content)
             }
             yield section

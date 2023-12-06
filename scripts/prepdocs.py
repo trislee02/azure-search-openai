@@ -30,6 +30,7 @@ from azure.search.documents.indexes.models import (
 from azure.storage.blob import BlobServiceClient
 from pypdf import PdfReader, PdfWriter
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
+from pathlib import Path
 
 from splitter.splitter import Splitter
 from splitter.markdownsplitter import MarkdownSplitter
@@ -85,11 +86,6 @@ def remove_blobs(filename):
             if args.verbose: print(f"\tRemoving blob {b}")
             blob_container.delete_blob(b)
 
-def load_and_split(filename: str, splitters: dict[str, Splitter]) -> dict:
-    
-
-    return splitter.load_and_split(filename)
-
 def before_retry_sleep(retry_state):
     if args.verbose: print(f"Rate limited on the OpenAI embeddings API, sleeping before retrying...")
 
@@ -103,6 +99,7 @@ def compute_embedding(text):
     return embed
 
 def check_index_exist(index_client, index_name):
+    if args.verbose: print(f"Ensuring search index {index_name} exists")
     if index_name not in index_client.list_index_names():
         index = SearchIndex(
             name=index_name,
@@ -115,7 +112,7 @@ def check_index_exist(index_client, index_name):
                 SimpleField(name="category", type="Edm.String", filterable=True, facetable=True),
                 SimpleField(name="sourcepage", type="Edm.String", filterable=True, facetable=True),
                 SimpleField(name="sourcefile", type="Edm.String", filterable=True, facetable=True),
-                SimpleField(name="metadata", type="Edm.String", filterable=True, facetable=True)
+                SimpleField(name="prefix", type="Edm.String", filterable=True, facetable=True)
             ],
             semantic_settings=SemanticSettings(
                 configurations=[SemanticConfiguration(
@@ -137,18 +134,17 @@ def check_index_exist(index_client, index_name):
     else:
         if args.verbose: print(f"Search index {index_name} already exists")
 
-def create_search_index():
-    if args.verbose: print(f"Ensuring search index {args.indextext} and {args.indexcode} exists")
+def create_search_index(indexes: dict[str, str]):
     index_client = SearchIndexClient(endpoint=f"https://{args.searchservice}.search.windows.net/",
                                      credential=search_creds)
-    check_index_exist(index_client, args.indextext)
-    check_index_exist(index_client, args.indexcode)    
+    for index_name in indexes.values():
+        check_index_exist(index_client, index_name)
 
-def index_sections(filename, sections):
-    if filename.endswith(".py"):
-        index_name = args.indexcode
-    else:
-        index_name = args.indextext
+def index_sections(filepath, sections, indexes):
+    path = Path(filepath)
+    filename = os.path.basename(filepath)
+    index_type = path.parent.absolute().name.split('/')[-1]
+    index_name = indexes[index_type]
 
     search_client = SearchClient(endpoint=f"https://{args.searchservice}.search.windows.net/",
                                     index_name=index_name,
@@ -201,8 +197,12 @@ if __name__ == "__main__":
     parser.add_argument("--storagekey", required=False, help="Optional. Use this Azure Blob Storage account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--tenantid", required=False, help="Optional. Use this to define the Azure directory where to authenticate)")
     parser.add_argument("--searchservice", help="Name of the Azure Cognitive Search service where content should be indexed (must exist already)")
-    parser.add_argument("--indextext", help="Name of the Azure Cognitive Search index where text content should be indexed (will be created if it doesn't exist)")
+
+    parser.add_argument("--indexros", help="Name of the Azure Cognitive Search index where ROS document should be indexed (will be created if it doesn't exist)")
     parser.add_argument("--indexcode", help="Name of the Azure Cognitive Search index where code content should be indexed (will be created if it doesn't exist)")
+    parser.add_argument("--indexluxai", help="Name of the Azure Cognitive Search index where LuxAI document should be indexed (will be created if it doesn't exist)")
+    parser.add_argument("--indexemail", help="Name of the Azure Cognitive Search index where support emails should be indexed (will be created if it doesn't exist)")
+
     parser.add_argument("--searchkey", required=False, help="Optional. Use this Azure Cognitive Search account key instead of the current user identity to login (use az login to set current user for Azure)")
     parser.add_argument("--novectors", action="store_true", help="Don't compute embeddings for the sections (e.g. don't call the OpenAI embeddings API during indexing)")
     # Arguments for OpenAI
@@ -228,6 +228,7 @@ if __name__ == "__main__":
     search_creds = default_creds if args.searchkey == None else AzureKeyCredential(args.searchkey)
     use_vectors = not args.novectors
 
+
     # Document splitter / Chunking strategy
     markdown_splitter = MarkdownSplitter(openaikey=args.openaikey,
                                 openaiservice=args.openaiservice,
@@ -236,6 +237,20 @@ if __name__ == "__main__":
     code_splitter = CodeSplitter()
     email_splitter = EmailSplitter()
     
+    indexes = {
+        "ros": args.indexros,
+        "code": args.indexcode,
+        "luxai": args.indexluxai,
+        "email": args.indexemail
+    }
+
+    splitters = {
+        "ros": markdown_splitter,
+        "code": code_splitter,
+        "luxai": markdown_splitter,
+        "email": email_splitter
+    }
+
     if not args.skipblobs:
         storage_creds = default_creds if args.storagekey == None else args.storagekey
     if not args.localpdfparser:
@@ -267,14 +282,14 @@ if __name__ == "__main__":
         remove_from_index(None)
     else:
         if not args.remove:
-            create_search_index()
+            create_search_index(indexes)
         
         print(f"Processing files...")
-        for filename in glob.glob(args.files):
-            if args.verbose: print(f"Processing '{filename}'")
+        for filepath in glob.glob(args.files, recursive=True):
+            if args.verbose: print(f"Processing '{filepath}'")
             if args.remove:
-                remove_blobs(filename)
-                remove_from_index(filename)
+                remove_blobs(filepath)
+                remove_from_index(filepath)
             elif args.removeall:
                 remove_blobs(None)
                 remove_from_index(None)
@@ -282,18 +297,16 @@ if __name__ == "__main__":
                 # if not args.skipblobs:
                 #     upload_blobs(filename)
                 # page_map = get_document_text(filename)
-                if filename.endswith(".py"):
-                    splitter = code_splitter
-                elif filename.endswith(".md"):
-                    splitter = markdown_splitter
-                else:
-                    splitter = email_splitter
                 
-                splits = splitter.load_and_split(filename)
-                for s in splits:
-                    print(s.content)
-                    print("++++ END CONTENT ++++")
-                    print(s.metadata)
+                path = Path(filepath)
+                index_type = path.parent.absolute().name.split('/')[-1]
+                splitter = splitters[index_type]                
+                splits = splitter.load_and_split(filepath)
+                for i, s in enumerate(splits):
+                    print(f"===========SPLIT #{i}=========")
+                    print(f"CONTENT:\t{s.content}")
+                    print(f"METADATA:\t{s.metadata}")
                     print("===========END SPLIT=========")
-                # sections = splitter.create_section(filename, splits)
-                # index_sections(os.path.basename(filename), sections)
+
+                sections = splitter.create_section(filepath, splits)
+                index_sections(filepath, sections, indexes)

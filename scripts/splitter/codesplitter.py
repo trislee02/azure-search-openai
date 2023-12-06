@@ -15,11 +15,9 @@ from langchain.text_splitter import (
 )
 
 class CodeSplitter(Splitter):
-    def __init__(self):
-        pass
 
     def load(self, filename: str) -> list[Document]:
-        with open(filename, "r", encoding="utf-8") as f:
+        with open(filename, "r", encoding='windows-1252') as f:
             content = f.read()
             return [Document(content=content)]
 
@@ -52,7 +50,7 @@ class CodeSplitter(Splitter):
                 "id": f"{file_id}-page-{i}",
                 "content": doc.content,
                 "sourcefile": filename,
-                "embedding": utils.compute_embedding(self.azure_openai_embed_deployment, doc.content)
+                "embedding": utils.compute_embedding(doc.content)
             }
             yield section  
     

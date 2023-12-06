@@ -48,7 +48,7 @@ class MarkdownSplitter(Splitter):
             openai.api_version = "2023-07-01-preview"
 
     def load(self, filename: str) -> list[Document]:
-        with open(filename, "r", encoding="utf-8") as f:
+        with open(filename, "r", encoding='windows-1252') as f:
             content = f.read()
             content = clean_html_text(content)
             document = Document(content=content)
@@ -85,7 +85,7 @@ class MarkdownSplitter(Splitter):
                 "id": f"{file_id}-page-{i}",
                 "content": doc.content,
                 "sourcefile": filename,
-                "embedding": utils.compute_embedding(self.azure_openai_embed_deployment, doc.content)
+                "embedding": utils.compute_embedding(doc.content)
             }
             yield section  
 
