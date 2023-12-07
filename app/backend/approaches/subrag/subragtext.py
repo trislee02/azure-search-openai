@@ -2,6 +2,7 @@ from typing import Any, Sequence
 from approaches.subrag.subrag import SubRAG
 
 import openai
+import time
 import tiktoken
 import json
 from azure.search.documents import SearchClient
@@ -69,7 +70,11 @@ Answer: {chat_content}
 
 
     def before_retry_sleep(retry_state):
-        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+        try:
+            print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+            retry_state.outcome.result()
+        except Exception as e:
+            print(e)
 
     @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
@@ -140,9 +145,12 @@ Answer: {chat_content}
         if not has_text:
             query_text = None
 
+        overrides["semantic_ranker"] = True
+
         # Use semantic L2 reranker if requested and if retrieval mode is text or hybrid (vectors + text)
         if overrides.get("semantic_ranker") and has_text:
-            r = self.search_client.search(query_text, 
+            print("Using semantic ranker")
+            results = self.search_client.search(query_text, 
                                         filter=filter,
                                         query_type=QueryType.SEMANTIC, 
                                         query_language="en-us", 
@@ -154,7 +162,7 @@ Answer: {chat_content}
                                         top_k=50 if query_vector else None,
                                         vector_fields="embedding" if query_vector else None)
         else:
-            r = self.search_client.search(query_text, 
+            results = self.search_client.search(query_text, 
                                         filter=filter, 
                                         top=top, 
                                         vector=query_vector, 
@@ -162,11 +170,12 @@ Answer: {chat_content}
                                         vector_fields="embedding" if query_vector else None)
         retrieved_docs = []
         retrieved_doc_embeds = []
-        for doc in r:
+        for doc in results:
             if use_semantic_captions:
                 doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
             else:
                 doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.prefix_field]) + "\n" + nonewlines(doc[self.content_field])
+            
             doc_vector = doc[self.embedding_field]
             
             retrieved_docs.append(doc_content)
@@ -236,7 +245,6 @@ Answer: {chat_content}
                                                                 n=1)
                 tokens_count += self.__count_tokens(chat_completion)
                 chat_content = chat_completion.choices[0].message.content
-                # print(f"Revised answer #{tries}: {chat_content}")
 
             previous_answer = chat_content
             

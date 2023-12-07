@@ -25,7 +25,8 @@ class ChatMessageAction:
     AZURE_STORAGE_ACCOUNT = os.environ.get("AZURE_STORAGE_ACCOUNT") or "mystorageaccount"
     AZURE_STORAGE_CONTAINER = os.environ.get("AZURE_STORAGE_CONTAINER") or "content"
     AZURE_SEARCH_SERVICE = os.environ.get("AZURE_SEARCH_SERVICE") or "gptkb"
-    AZURE_SEARCH_INDEX_TEXT = os.environ.get("AZURE_SEARCH_INDEX_TEXT") or "gptkbindex-text"
+    AZURE_SEARCH_INDEX_LUXAI = os.environ.get("AZURE_SEARCH_INDEX_LUXAI") or "gptkbindex-luxai"
+    AZURE_SEARCH_INDEX_EMAIL = os.environ.get("AZURE_SEARCH_INDEX_EMAIL") or "gptkbindex-email"
     AZURE_SEARCH_INDEX_CODE = os.environ.get("AZURE_SEARCH_INDEX_CODE") or "gptkbindex-code"
     AZURE_SEARCH_INDEX_ROS = os.environ.get("AZURE_SEARCH_INDEX_ROS") or "gptkbindex-ros"
 
@@ -55,6 +56,7 @@ class ChatMessageAction:
     AZURE_SEARCH_KEY = os.environ.get("AZURE_SEARCH_SERVICE_KEY") or ""
     AZURE_STORAGE_KEY = os.environ.get("AZURE_STORAGE_ACCOUNT_KEY") or ""
 
+    OPENAI_API_VERSION = os.environ.get("OPENAI_API_VERSION")
     # Use the current user identity to authenticate with Cognitive Search and Blob Storage (no secrets needed, 
     # just use 'az login' locally, and managed identity when deployed on Azure). If you need to use keys, use separate AzureKeyCredential instances with the 
     # keys for each service
@@ -81,7 +83,7 @@ class ChatMessageAction:
     # Set up clients for Cognitive Search and Storage
     search_client = SearchClient(
         endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
-        index_name=AZURE_SEARCH_INDEX_TEXT,
+        index_name=AZURE_SEARCH_INDEX_LUXAI,
         credential=search_creds)
     search_client_code = SearchClient(
         endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
@@ -91,15 +93,21 @@ class ChatMessageAction:
         endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
         index_name=AZURE_SEARCH_INDEX_ROS,
         credential=search_creds)
+    search_client_email = SearchClient(
+        endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
+        index_name=AZURE_SEARCH_INDEX_EMAIL,
+        credential=search_creds)
+    
     blob_client = BlobServiceClient(
         account_url=f"https://{AZURE_STORAGE_ACCOUNT}.blob.core.windows.net", 
         credential=storage_creds)
     blob_container = blob_client.get_container_client(AZURE_STORAGE_CONTAINER)
     
     search_clients = {
-        "text": search_client,
+        "luxai": search_client,
         "code": search_client_code,
         "ros": search_client_ros,
+        "email": search_client_email
     }
 
 

@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import openai
 import tiktoken
+import ast
 import json
 from azure.search.documents import SearchClient
 from azure.search.documents.models import QueryType
@@ -14,7 +15,14 @@ from core.modelhelper import get_token_limit
 
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 
-from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt, ChatMultiSearchPrompt, ChatGeneralPrompt, IntentClassificationPrompt
+from approaches.promptutils import (
+    ChatRAGPrompt, 
+    ChatVectorComparePrompt, 
+    ChatMultiSearchPrompt, 
+    ChatGeneralPrompt, 
+    IntentClassificationPrompt,
+    RequestExtractionRefinePrompt
+)
 from scipy.spatial.distance import cosine
 
 from core.modelhelper import num_tokens_from_chat_messages
@@ -33,9 +41,10 @@ class ChatRAGMultiRAGApproach(Approach):
     """
 
     class RAGIntent:
-        TEXT = "text"
+        LUXAI = "luxai"
         CODE = "code"
         ROS = "ros"
+        EMAIL = "email"
 
     # Chat roles
     SYSTEM = "system"
@@ -51,7 +60,7 @@ Answer: {chat_content}
     THRESHOLD_NO_ANSWER = 0.25
     THRESHOLD_REQUEST_CODE = 0.23
 
-    MAX_TRY = 3
+    MAX_TRY_REFINE_REQUESTS = 3
 
     DISCLAIMER_FOR_PLAIN_LLM = """
 This is LLM-self generated answer based on pre-existing knowledge, not directly related to LuxAI document.
@@ -73,8 +82,9 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         super().__init__()
         
         self.search_client_code = search_clients["code"]
-        self.search_client_text = search_clients["text"]
+        self.search_client_luxai = search_clients["luxai"]
         self.search_client_ros = search_clients["ros"]
+        self.search_client_email = search_clients["email"]
 
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
@@ -99,7 +109,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
-            self.RAGIntent.TEXT: SubRAGText(search_client=self.search_client_text, 
+            self.RAGIntent.LUXAI: SubRAGText(search_client=self.search_client_luxai, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -121,12 +131,27 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
+            self.RAGIntent.EMAIL: SubRAGText(search_client=self.search_client_email, 
+                               sourcepage_field=sourcepage_field,
+                               content_field=content_field,
+                               embedding_field=embedding_field,
+                               prefix_field=prefix_field,
+                               chatgpt_model=chatgpt_model,
+                               embed_model=embed_model,
+                               chatgpt_deployment=chatgpt_deployment,
+                               embedding_deployment=embedding_deployment,
+                               completion_deployment=completion_deployment,
+                               completion_model=completion_model),
         }
 
     def before_retry_sleep(retry_state):
-        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+        try:
+            print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+            retry_state.outcome.result()
+        except Exception as e:
+            print(e)
 
-    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(5), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
         completion = None
         max_tokens = max_tokens - num_tokens_from_chat_messages(messages=messages, model=self.chatgpt_model)
@@ -153,23 +178,6 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         # return gpt_response.usage["completion_tokens"]
         return gpt_response.usage["total_tokens"]
     
-    def __compute_completion(self, prompt, temperature, max_tokens=4097):
-        completion = None
-        if self.completion_deployment != "":
-            completion = openai.Completion.create(
-                deployment_id=self.completion_deployment,
-                model=self.completion_model,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens)
-        else:
-            completion = openai.Completion.create(
-                model=self.completion_model,
-                prompt=prompt, 
-                temperature=temperature, 
-                max_tokens=max_tokens)
-        return completion
-
     def __compute_embedding(self, text): 
         if self.embedding_deployment != "":
             vector = openai.Embedding.create(engine=self.embedding_deployment, input=text)["data"][0]["embedding"]                
@@ -177,7 +185,48 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
             vector = openai.Embedding.create(input=text, model=self.embed_model)["data"][0]["embedding"]
         return vector
 
+    def __check_request(self, request: str):
+        messages = self.get_messages_from_history(
+            RequestExtractionRefinePrompt.system_message_check,
+            self.chatgpt_model,
+            [],
+            RequestExtractionRefinePrompt.user_content_template_check.format(request=request)
+        )
+
+        chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                         temperature=0.0, 
+                                                         max_tokens=self.chatgpt_token_limit, 
+                                                         n=1)
+
+        tokens_count = self.__count_tokens(chat_completion)
+        reasoning = chat_completion.choices[0].message.content
+
+        if RequestExtractionRefinePrompt.SUFFICIENT_TOKEN in reasoning:
+            return True, tokens_count
+        else:
+            return False, tokens_count
+    
+    def __refine_request(self, request: str, message: str, chat_history: str):
+        messages = self.get_messages_from_history(
+            RequestExtractionRefinePrompt.system_message_refine,
+            self.chatgpt_model,
+            [],
+            RequestExtractionRefinePrompt.user_content_template_refine.format(original_request=request,
+                                                                              current_message=message,
+                                                                              conversation_history=chat_history)
+        )
+
+        chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                         temperature=0.0, 
+                                                         max_tokens=self.chatgpt_token_limit, 
+                                                         n=1)
+
+        tokens_count = self.__count_tokens(chat_completion)
+        refined_request = chat_completion.choices[0].message.content
+        return refined_request, tokens_count
+
     def __extract_main_requests(self, history: Sequence[dict[str, str]]) -> list[str]:
+        tokens_count = 0
 
         history_list = self.__parse_history(history)
 
@@ -190,7 +239,6 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
             ChatMultiSearchPrompt.user_message_template.format(message=history[-1]["user"], chat_history=history_list_str),
             ChatMultiSearchPrompt.few_shots
         )
-
         print(messages)
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
@@ -198,8 +246,34 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                                          max_tokens=self.chatgpt_token_limit, 
                                                          n=1)
 
-        tokens_count = self.__count_tokens(chat_completion)
-        extracted_requests = chat_completion.choices[0].message.content.strip().split("\n")
+        tokens_count += self.__count_tokens(chat_completion)
+        chat_content = chat_completion.choices[0].message.content.strip()
+        try:
+            extracted_requests = ast.literal_eval(chat_content)
+        except:
+            extracted_requests = chat_content.split("\n")
+
+        # Check understandability and refine extracted requests
+        for i, request in enumerate(extracted_requests):
+            understandable = False # A request that is understandable has sufficient context in that.
+            tries = 0
+            while not understandable and tries < self.MAX_TRY_REFINE_REQUESTS:
+                if tries > 0:
+                    print(f"Original request:\t{request}")
+                    response, tokens = self.__refine_request(request=request,
+                                                    message=history[-1]["user"],
+                                                    chat_history=history_list_str)   
+                    try:
+                        response = ast.literal_eval(response)
+                        request = response["refined_request"]
+                    except:
+                        request = request + "."
+                    print(f"Refined request:\t{request}")
+                    tokens_count += tokens
+                understandable, tokens = self.__check_request(request)
+                tokens_count += tokens
+                tries += 1
+            extracted_requests[i] = request
 
         # Check whether no questions found
         if len(extracted_requests) == 1 and extracted_requests[0] == "0":
@@ -213,7 +287,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         print(f"Request code distance: {request_code_distance}")
         # If the request is a normal text generation
         if (request_code_distance > self.THRESHOLD_REQUEST_CODE):
-            return self.RAGIntent.TEXT
+            return "Other"
         else:
             return self.RAGIntent.CODE
 
@@ -228,7 +302,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         extracted_requests = []
         thoughts = ""
 
-        overrides["retrieval_mode"] = "vectors"
+        overrides["retrieval_mode"] = "hybrid"
 
         has_answer = False
 
@@ -250,13 +324,16 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                 # If it is more likely to be a code-related request, then try code stores first, otherwise do the reverse.
                 if request_intent == self.RAGIntent.CODE:
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.TEXT])
+                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.EMAIL])
+                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.LUXAI])
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
                 else:
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.TEXT])
+                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.EMAIL])
+                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.LUXAI])
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
                     sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
 
+                # Try to find answer using sub-rags
                 sub_answer = {}
                 while sub_answer == {} or (len(sub_rags_stack) > 0 and sub_answer["answer"] == ""):
                     print(f"Number of rags in stack: {len(sub_rags_stack)}")
