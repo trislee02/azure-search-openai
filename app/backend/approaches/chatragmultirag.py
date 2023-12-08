@@ -23,6 +23,7 @@ from approaches.promptutils import (
     IntentClassificationPrompt,
     RequestExtractionRefinePrompt
 )
+
 from scipy.spatial.distance import cosine
 
 from core.modelhelper import num_tokens_from_chat_messages
@@ -151,7 +152,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         except Exception as e:
             print(e)
 
-    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(5), before_sleep=before_retry_sleep)
+    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
         completion = None
         max_tokens = max_tokens - num_tokens_from_chat_messages(messages=messages, model=self.chatgpt_model)
@@ -239,7 +240,6 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
             ChatMultiSearchPrompt.user_message_template.format(message=history[-1]["user"], chat_history=history_list_str),
             ChatMultiSearchPrompt.few_shots
         )
-        print(messages)
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
                                                          temperature=0.0, 
@@ -302,7 +302,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         extracted_requests = []
         thoughts = ""
 
-        overrides["retrieval_mode"] = "hybrid"
+        overrides["retrieval_mode"] = "hybrid" # "vectors"
 
         has_answer = False
 

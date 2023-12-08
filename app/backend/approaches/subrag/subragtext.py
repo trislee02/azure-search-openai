@@ -174,7 +174,10 @@ Answer: {chat_content}
             if use_semantic_captions:
                 doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
             else:
-                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.prefix_field]) + "\n" + nonewlines(doc[self.content_field])
+                if "/email/" in doc[self.sourcepage_field]:
+                    doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "Frequently Asked Question:\n```" + nonewlines(doc[self.content_field]) + "\n```"
+                else:
+                    doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.prefix_field]) + "\n" + nonewlines(doc[self.content_field])
             
             doc_vector = doc[self.embedding_field]
             
