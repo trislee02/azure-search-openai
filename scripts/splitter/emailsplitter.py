@@ -6,6 +6,7 @@ import json
 import utils
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 import re
+import os
 
 warnings.filterwarnings("ignore")
 from pprint import pprint
@@ -23,9 +24,9 @@ JSON format of FAQ:
 
 USER_TEMPLATE_EXTRACTING_QA = """
 Given emails:
-
+```
 {emails}
-
+```
 JSON format of FAQ:
 """
 
@@ -42,6 +43,7 @@ def generate_qa(messages, temperature) -> list[str]:
     response = openai.ChatCompletion.create(engine="tri-turbo",
                                             messages = messages,
                                             temperature=temperature,
+                                            max_tokens=4000,
                                             top_p=0.95,
                                             frequency_penalty=0,
                                             presence_penalty=0,
@@ -54,12 +56,16 @@ def generate_qa(messages, temperature) -> list[str]:
     return list_qa
 
 def clean_text(text: str) -> str:
-    text = text.replace("\n\n", "\n")
-    return text
+    cleaned_text = re.sub(r'\n{2,}', "\n", text)
+    cleaned_text = cleaned_text.strip()
+    return cleaned_text
 
 class EmailSplitter(Splitter):
-    def __init__(self):
-        pass
+    def __init__(self, openaiapikey: str = None, openaikey: str = "", openaiservice: str = "", gptdeployment: str = ""):
+        self.openapikey = openaiapikey
+        self.openaikey = openaikey
+        self.openaiservice = openaiservice
+        self.gptdeployment = gptdeployment
 
     def load(self, filename: str) -> list[Document]:
         with open(filename, "r", encoding='windows-1252') as f:
@@ -83,8 +89,10 @@ class EmailSplitter(Splitter):
 
     def create_section(self, filename: str, documents: list[Document]):
         file_id = utils.filename_to_id(filename)
-
+        file_basename = os.path.basename(filename)
+        f_out = open(f"emails/splits-{file_basename}", "w", encoding="utf-8")
         for i, doc in enumerate(documents):
+            f_out.write(f"{doc.content}\n\n")
             section = {
                 "id": f"{file_id}-page-{i}",
                 "content": doc.content,
@@ -92,35 +100,5 @@ class EmailSplitter(Splitter):
                 "embedding": utils.compute_embedding(doc.content)
             }
             yield section  
+        f_out.close()
     
-
-    
-    def before_retry_sleep(retry_state):
-        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
-
-    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
-    def __generate_summary(self, text: str, previous_parts: str) -> str:
-        system_message = """Given context of the conversation and current messages/emails, write a concise summary for current message."""
-        content_template = """Summary of the preceding parts:
-```
-{summary_previous_parts}
-```
-The current emails/messages:
-```
-{text}
-```
-Introduction for the current part:"""
-        messages = [{"role": "system",  "content": system_message},
-                    {"role": "user",    "content": content_template.format(text=text,
-                                                                           summary_previous_parts=previous_parts)}]
-
-        response = openai.ChatCompletion.create(engine=self.gptdeployment,
-                                                messages = messages,
-                                                temperature=0.7,
-                                                max_tokens=800,
-                                                top_p=0.95,
-                                                frequency_penalty=0,
-                                                presence_penalty=0,
-                                                stop=None)
-
-        return response.choices[0].message.content

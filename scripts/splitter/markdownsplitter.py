@@ -15,6 +15,11 @@ def clean_special_character(text: str) -> str:
     cleaned_text = text.replace("\\n", "\n").replace("\\t", "\t")
     return cleaned_text
 
+def clean_text(text: str) -> str:
+    cleaned_text = re.sub(r'\n{2,}', "\n", text)
+    cleaned_text = cleaned_text.strip()
+    return cleaned_text
+
 def get_code_blocks(text: str) -> dict:
     """
     Find all code blocks inside triple backsticks (```) pairs.
@@ -33,19 +38,15 @@ def get_code_blocks(text: str) -> dict:
     return matches_with_indices
 
 class MarkdownSplitter(Splitter):
-    MAX_SECTION_LENGTH = 1000
+    MAX_SECTION_LENGTH = 500
     SENTENCE_SEARCH_LIMIT = 100
-    SECTION_OVERLAP = 100
+    SECTION_OVERLAP = 0
         
     def __init__(self, openaiapikey: str = None, openaikey: str = "", openaiservice: str = "", gptdeployment: str = ""):
+        self.openapikey = openaiapikey
+        self.openaikey = openaikey
+        self.openaiservice = openaiservice
         self.gptdeployment = gptdeployment
-        if openaiapikey:
-            openai.api_key = openaiapikey
-        else:
-            openai.api_type = "azure"
-            openai.api_key = openaikey
-            openai.api_base = f"https://{openaiservice}.openai.azure.com"
-            openai.api_version = "2023-07-01-preview"
 
     def load(self, filename: str) -> list[Document]:
         with open(filename, "r", encoding='windows-1252') as f:
@@ -61,6 +62,7 @@ class MarkdownSplitter(Splitter):
         all_text = "".join(doc.content for doc in documents)
         all_text = clean_html_text(all_text)
         all_text = clean_special_character(all_text)
+        all_text = clean_text(all_text)
 
         segments = self.__split_markdown_heading(all_text)
 
@@ -182,6 +184,10 @@ class MarkdownSplitter(Splitter):
 
     def before_retry_sleep(retry_state):
         print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+        try:
+            retry_state.outcome.result()
+        except Exception as e:
+            print(e)
 
     @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __generate_summary(self, text: str, previous_parts: str) -> str:

@@ -292,6 +292,7 @@ if __name__ == "__main__":
         epilog="Example: prepdocs.py '..\data\*' --storageaccount myaccount --container mycontainer --searchservice mysearch --index myindex -v"
         )
     parser.add_argument("files", help="Files to be processed")
+    parser.add_argument("--openaiapiversion", required=True, help="OpenAI API version")
     parser.add_argument("--category", help="Value for the category field in the search index for all sections indexed in this run")
     parser.add_argument("--skipblobs", action="store_true", help="Skip uploading individual pages to Azure Blob Storage")
     parser.add_argument("--storageaccount", help="Azure Blob Storage account name")
@@ -362,7 +363,7 @@ if __name__ == "__main__":
                 openai.api_key = args.openaikey
 
             openai.api_base = f"https://{args.openaiservice}.openai.azure.com"
-            openai.api_version = "2023-05-15"
+            openai.api_version = args.openaiapiversion
 
     if args.removeall:
         remove_blobs(None)
