@@ -1,4 +1,19 @@
-# ChatGPT + Enterprise data with Azure OpenAI and Cognitive Search
+# ChatGPT + Enterprise data with Azure OpenAI and Cognitive Search [Best strategy]
+
+* AZURE_SEARCH_INDEX_TEXT="gptkbindex-text-2"
+* AZURE_SEARCH_INDEX_CODE="gptkbindex-code-8"
+* AZURE_SEARCH_INDEX_ROS="gptkbindex-ros-8"
+
+RAGAS Evaluation score:
+* Faithfulness: 0.93	
+* Answer Relevancy: 0.87
+* Context Recall: 0.85
+* Request Recall: 0.97
+* Answer Similarity: 0.64
+* Average Tokens: 3907
+
+Report link: [Notion report](https://tri-luxai.notion.site/Report-12-05-RAG-Evaluation-5212a5c27ee146f59600fd102849417f?pvs=4)
+
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=599293758&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
 [![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/azure-search-openai-demo)
