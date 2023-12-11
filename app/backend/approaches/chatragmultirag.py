@@ -41,31 +41,40 @@ class ChatRAGMultiRAGApproach(Approach):
         4. Merge all the responses to generate the final response
     """
 
-    class RAGIntent:
+    class SubRAGList:
         LUXAI = "luxai"
         CODE = "code"
         ROS = "ros"
         EMAIL = "email"
+
+    class RequestIntent:
+        NO_REQUEST = 0
+        CODE_GENERATION = 1
+        SCHEDULE_MEETING = 2
+        OTHERS = 3
 
     # Chat roles
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
 
-    LOG_ANSWER_FOR_REQUEST = """\nRequest: {query_text}
-
+    LOG_ANSWER_FOR_REQUEST = """\nQuestion: {query_text}
 Answer: {chat_content}
 ------------------
 """
 
     THRESHOLD_NO_ANSWER = 0.25
-    THRESHOLD_REQUEST_CODE = 0.23
 
     MAX_TRY_REFINE_REQUESTS = 3
 
-    DISCLAIMER_FOR_PLAIN_LLM = """
+
+
+    DISCLAIMER_FOR_PLAIN_LLM = {"DISCLAIMER_FOR_PLAIN_LLM": """
 This is LLM-self generated answer based on pre-existing knowledge, not directly related to LuxAI document.
-"""
+"""}
+    DISCLAIMER_SCHEDULING_MEETING = {"DISCLAIMER_SCHEDULING_MEETING": """
+The customer requests to schedule a meeting which should be handled by human.
+"""}
 
     def __init__(self, 
                  search_clients: defaultdict[SearchClient],
@@ -100,7 +109,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         self.completion_model = completion_model
 
         self.sub_rags = {
-            self.RAGIntent.CODE: SubRAGCode(search_client=self.search_client_code, 
+            self.SubRAGList.CODE: SubRAGCode(search_client=self.search_client_code, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -110,18 +119,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
-            self.RAGIntent.LUXAI: SubRAGText(search_client=self.search_client_luxai, 
-                               sourcepage_field=sourcepage_field,
-                               content_field=content_field,
-                               embedding_field=embedding_field,
-                               prefix_field=prefix_field,
-                               chatgpt_model=chatgpt_model,
-                               embed_model=embed_model,
-                               chatgpt_deployment=chatgpt_deployment,
-                               embedding_deployment=embedding_deployment,
-                               completion_deployment=completion_deployment,
-                               completion_model=completion_model),
-            self.RAGIntent.ROS: SubRAGText(search_client=self.search_client_ros, 
+            self.SubRAGList.LUXAI: SubRAGText(search_client=self.search_client_luxai, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -132,7 +130,18 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
-            self.RAGIntent.EMAIL: SubRAGText(search_client=self.search_client_email, 
+            self.SubRAGList.ROS: SubRAGText(search_client=self.search_client_ros, 
+                               sourcepage_field=sourcepage_field,
+                               content_field=content_field,
+                               embedding_field=embedding_field,
+                               prefix_field=prefix_field,
+                               chatgpt_model=chatgpt_model,
+                               embed_model=embed_model,
+                               chatgpt_deployment=chatgpt_deployment,
+                               embedding_deployment=embedding_deployment,
+                               completion_deployment=completion_deployment,
+                               completion_model=completion_model),
+            self.SubRAGList.EMAIL: SubRAGText(search_client=self.search_client_email, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -282,14 +291,26 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
 
     def __classify_request_intent(self, request: str):
         # Check whether the query is asking for code generation
-        request_vector = self.__compute_embedding(request)
-        request_code_distance = cosine(IntentClassificationPrompt.request_code_vector, request_vector)
-        print(f"Request code distance: {request_code_distance}")
-        # If the request is a normal text generation
-        if (request_code_distance > self.THRESHOLD_REQUEST_CODE):
-            return "Other"
-        else:
-            return self.RAGIntent.CODE
+        user_conv = IntentClassificationPrompt.user_content_template.format(request=request)
+
+        messages = [{"role":"system","content": IntentClassificationPrompt.system_message},
+                    {"role":"user","content": user_conv}]
+        
+        chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                        temperature=0.0, 
+                                                        max_tokens=self.chatgpt_token_limit, 
+                                                        n=1)
+                
+        tokens_count = self.__count_tokens(chat_completion)
+
+        chat_content = chat_completion.choices[0].message.content.strip()
+        print(chat_content)
+        try:
+            intent = int(chat_content.split("[Intent]:")[-1])
+        except:
+            intent = 3
+        
+        return intent, tokens_count   
 
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
         all_answers = "" # Raw answer contains separated responses for requests
@@ -301,8 +322,9 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         contexts = []
         extracted_requests = []
         thoughts = ""
+        followup_message = {}
 
-        overrides["retrieval_mode"] = "hybrid" # "vectors"
+        overrides["retrieval_mode"] = "vectors" # "hybrid"
 
         has_answer = False
 
@@ -319,19 +341,20 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                     continue
                 
                 sub_rags_stack = []
-                request_intent = self.__classify_request_intent(request)
-
+                request_intent, num_tokens = self.__classify_request_intent(request)
+                tokens_count += num_tokens
                 # If it is more likely to be a code-related request, then try code stores first, otherwise do the reverse.
-                if request_intent == self.RAGIntent.CODE:
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.EMAIL])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.LUXAI])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
-                else:
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.EMAIL])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.LUXAI])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
+                if request_intent == self.RequestIntent.CODE_GENERATION:
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.CODE])
+                elif request_intent == self.RequestIntent.OTHERS:
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.EMAIL])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.ROS])
+                elif request_intent == self.RequestIntent.SCHEDULE_MEETING:
+                    followup_message.update(self.DISCLAIMER_SCHEDULING_MEETING)
+                    continue
+                else: # No request
+                    continue         
 
                 # Try to find answer using sub-rags
                 sub_answer = {}
@@ -363,7 +386,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                         {"role":"user","content": user_conv}]
             
             chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                            temperature=overrides.get("temperature") or 0.0, 
+                                                            temperature=ChatMultiSearchPrompt.temperature_merge_answer, 
                                                             max_tokens=self.chatgpt_token_limit, 
                                                             n=1)
                     
@@ -389,11 +412,15 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                 max_tokens=self.chatgpt_token_limit - len(user_msg))            
 
             chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.7, max_tokens=self.chatgpt_token_limit, n=1)
-            final_answer = chat_completion.choices[0].message.content            
-            final_answer += "\n" + self.DISCLAIMER_FOR_PLAIN_LLM
+            final_answer = chat_completion.choices[0].message.content  
+            followup_message.update(self.DISCLAIMER_FOR_PLAIN_LLM)       
             thoughts = self.format_display_message(messages)
             contexts = []
             all_supporting_contents = ""
+
+        if len(followup_message) != 0:
+            followup_message_str = "\n".join(followup_message.values())
+            final_answer += "\n---------------\n" + followup_message_str
 
         return {"data_points": retrieved_docs, 
                 "answer": final_answer,

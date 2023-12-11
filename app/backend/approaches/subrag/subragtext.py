@@ -131,7 +131,7 @@ Answer: {chat_content}
         has_text = overrides.get("retrieval_mode") in ["text", "hybrid", None]
         has_vector = overrides.get("retrieval_mode") in ["vectors", "hybrid", None]
         use_semantic_captions = True if overrides.get("semantic_captions") and has_text else False
-        top = overrides.get("top") or 3
+        top = 3
         exclude_category = overrides.get("exclude_category") or None
         filter = "category ne '{}'".format(exclude_category.replace("'", "''")) if exclude_category else None
 
@@ -140,7 +140,7 @@ Answer: {chat_content}
             query_vector = self.__compute_embedding(query_text)
         else:
             query_vector = None
-
+        
         # Only keep the text query if the retrieval mode uses text, otherwise drop it
         if not has_text:
             query_text = None
@@ -149,7 +149,6 @@ Answer: {chat_content}
 
         # Use semantic L2 reranker if requested and if retrieval mode is text or hybrid (vectors + text)
         if overrides.get("semantic_ranker") and has_text:
-            print("Using semantic ranker")
             results = self.search_client.search(query_text, 
                                         filter=filter,
                                         query_type=QueryType.SEMANTIC, 
@@ -205,19 +204,20 @@ Answer: {chat_content}
         # STEP 2: Generate a contextual and content specific answer using the search results and chat history
         # Allow client to replace the entire prompt, or to inject into the existing prompt using >>>
         system_message = ChatRAGPrompt.system_message_chat_conversation
-
+        
         user_conv = ChatRAGPrompt.user_chat_template.format(content=supporting_content, 
                                                             question=query_text)
         
         messages = self.get_messages_from_history(
-            system_message,
-            self.chatgpt_model,
-            history,
-            user_conv,
-            max_tokens=self.chatgpt_token_limit)
+            system_prompt=system_message,
+            model_id=self.chatgpt_model,
+            history=history,
+            user_conv=user_conv,
+            max_tokens=self.chatgpt_token_limit
+        )
 
         chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                        temperature=overrides.get("temperature") or 0.0, 
+                                                        temperature=0.0, 
                                                         max_tokens=self.chatgpt_token_limit, 
                                                         n=1)
         tokens_count += self.__count_tokens(chat_completion)
@@ -243,7 +243,7 @@ Answer: {chat_content}
                             {"role":"user","content": response_to_revise}]
 
                 chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                                temperature=overrides.get("temperature") or 0.0, 
+                                                                temperature=0.0, 
                                                                 max_tokens=self.chatgpt_token_limit, 
                                                                 n=1)
                 tokens_count += self.__count_tokens(chat_completion)

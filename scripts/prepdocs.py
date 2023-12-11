@@ -310,4 +310,6 @@ if __name__ == "__main__":
                     print("===========END SPLIT=========")
 
                 sections = splitter.create_section(filepath, splits)
+                # for s in sections:
+                #     pass
                 index_sections(filepath, sections, indexes)
