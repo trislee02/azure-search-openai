@@ -7,6 +7,7 @@ import utils
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 import re
 import os
+import csv
 
 warnings.filterwarnings("ignore")
 from pprint import pprint
@@ -65,12 +66,46 @@ JSON-formatted list of answers:
 JSON-formatted list:
 """
 
+PROMPT_SYSTEM_SUMMARY = """Given previous emails, summarize the current customer email"""
+
+USER_TEMPLATE_SUMMARY = """
+### Previous emails ###
+{previous_emails}
+
+### Customer email ###
+{current_email}
+
+Summary for current email:
+"""
+
+
 def before_retry_sleep(retry_state):
     # print(f"Rate limited on the OpenAI API, sleeping before retrying...")
     try:
         retry_state.outcome.result()
     except Exception as e:
         print(e)
+
+@retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+def generate_summary(current_email, history):
+    history_str = json.dumps(history)
+
+    print("SUMMARIZE THE CUSTOMER EMAIL")
+    user_content = USER_TEMPLATE_SUMMARY.format(previous_emails=history_str,
+                                                current_email=current_email)
+
+    messages = [{"role": "system",  "content": PROMPT_SYSTEM_SUMMARY},
+                {"role": "user",    "content": user_content}]
+    response = openai.ChatCompletion.create(engine="tri-turbo",
+                                            messages = messages,
+                                            temperature=0.0,
+                                            max_tokens=4000,
+                                            top_p=0.95,
+                                            frequency_penalty=0,
+                                            presence_penalty=0,
+                                            stop=None)
+    summary = response.choices[0].message.content
+    return summary  
 
 @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
 def generate_qa(emails: str, temperature: float = 0.0) -> list[str]:
@@ -131,6 +166,12 @@ def clean_text(text: str) -> str:
     cleaned_text = cleaned_text.strip()
     return cleaned_text
 
+def clean_email(text: str):
+    text = re.sub(r'^.{1,20}\n^.{0,15}$', '', text, flags=re.MULTILINE)
+    text = re.sub(r' {2,}', " ", text)
+    text = re.sub(r'\s{2,}', "\n", text)
+    return text.strip()
+
 class EmailSplitter(Splitter):
     def __init__(self, openaiapikey: str = None, openaikey: str = "", openaiservice: str = "", gptdeployment: str = ""):
         self.openapikey = openaiapikey
@@ -139,21 +180,44 @@ class EmailSplitter(Splitter):
         self.gptdeployment = gptdeployment
 
     def load(self, filename: str) -> list[Document]:
-        with open(filename, "r", encoding='windows-1252') as f:
-            content = f.read()
-            return [Document(content=content)]
+        documents = []
+        with open(filename) as csv_file:
+            csv_reader = csv.reader(csv_file, delimiter=',')
+            line_count = 0
+            for row in csv_reader:
+                if line_count > 0: # Omit the header 
+                    customer_request = row[0].strip()
+                    luxai_support = clean_email(row[1])
+
+                    if len(customer_request) == 0 and len(luxai_support) > 0:
+                        documents[-1].content += f"\n{luxai_support}"
+                    elif len(luxai_support) > 0 and len(customer_request) > 0:
+                        customer_doc = Document(content=customer_request)
+                        luxai_doc = Document(content=luxai_support)
+
+                        documents.append(customer_doc)
+                        documents.append(luxai_doc) # LuxAI document is always put at the back
+                line_count += 1
+
+        # Ensure they're question-answer pairs
+        assert len(documents) % 2 == 0
+        return documents
 
     def split(self, documents: list[Document]) -> list[Document]:
         segments = []
         
-        all_text = "".join(doc.content for doc in documents)
-        all_text = clean_text(all_text)
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> ALL TEXT <<<<<<<<<<<<<<<<<<<<<<<<<<<")
-        print(all_text)
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>> END TEXT <<<<<<<<<<<<<<<<<<<<<<<<<<<")
-        
-        qa_list = generate_qa(emails=all_text)
-        for qa in qa_list: segments.append(Document(content=qa))
+        history = []
+
+        for i in range(0, len(documents), 2):
+            customer_email = documents[i].content
+            luxai_support = documents[i+1].content
+
+            summary = generate_summary(customer_email, history)
+            segment = f"{summary}\n{luxai_support}"
+            segments.append(Document(content=segment))        
+
+            history.append(customer_email)
+
         return segments
 
     def create_section(self, filename: str, documents: list[Document]):

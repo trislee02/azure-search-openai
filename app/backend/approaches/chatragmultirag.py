@@ -334,7 +334,7 @@ The customer requests to schedule a meeting which should be handled by human.
 
         # Check whether no questions found
         if len(extracted_requests) > 0:
-            for request in extracted_requests:
+            for index, request in enumerate(extracted_requests):
                 print(f"Length of extracted_request: {len(extracted_requests)}")
                 request = request.strip()
                 if request == "":
@@ -367,6 +367,7 @@ The customer requests to schedule a meeting which should be handled by human.
 
                 if sub_answer["answer"] == "":
                     sub_answer["answer"] = ChatVectorComparePrompt.book_a_meeting_message
+                    followup_message[f"Request {index}"] = f"""Cannot respond to the request: {request}"""""
                 else:
                     has_answer = True
 
@@ -384,6 +385,7 @@ The customer requests to schedule a meeting which should be handled by human.
 
             messages = [{"role":"system","content": ChatMultiSearchPrompt.system_message_merge_answer},
                         {"role":"user","content": user_conv}]
+            print(messages)
             
             chat_completion = self.__compute_chat_completion(messages=messages, 
                                                             temperature=ChatMultiSearchPrompt.temperature_merge_answer, 
