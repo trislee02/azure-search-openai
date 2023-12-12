@@ -46,6 +46,8 @@ AZURE_OPENAI_EMB_DEPLOYMENT = os.environ.get("AZURE_OPENAI_EMB_DEPLOYMENT") or "
 AZURE_SEARCH_KEY = os.environ.get("AZURE_SEARCH_SERVICE_KEY") or ""
 AZURE_STORAGE_KEY = os.environ.get("AZURE_STORAGE_ACCOUNT_KEY") or ""
 
+OPENAI_API_VERSION = os.environ.get("OPENAI_API_VERSION")
+
 # Use the current user identity to authenticate with Cognitive Search and Blob Storage (no secrets needed, 
 # just use 'az login' locally, and managed identity when deployed on Azure). If you need to use keys, use separate AzureKeyCredential instances with the 
 # keys for each service
@@ -60,7 +62,7 @@ else:
     # Used by the OpenAI SDK
     openai.api_type = "azure"
     openai.api_base = f"https://{AZURE_OPENAI_SERVICE}.openai.azure.com"
-    openai.api_version = "2023-05-15"
+    openai.api_version = OPENAI_API_VERSION
 
     if AZURE_OPENAI_KEY != "":
         openai.api_key = AZURE_OPENAI_KEY

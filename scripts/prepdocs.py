@@ -37,9 +37,10 @@ from splitter.markdownsplitter import MarkdownSplitter
 from splitter.codesplitter import CodeSplitter
 from splitter.emailsplitter import EmailSplitter
 
-MAX_SECTION_LENGTH = 1000
-SENTENCE_SEARCH_LIMIT = 100
-SECTION_OVERLAP = 100
+open_ai_token_cache = {}
+CACHE_KEY_TOKEN_CRED = 'openai_token_cred'
+CACHE_KEY_CREATED_TIME = 'created_time'
+CACHE_KEY_TOKEN_TYPE = 'token_type'
 
 def blob_name_from_file_page(filename, page = 0):
     if os.path.splitext(filename)[1].lower() == ".pdf":
@@ -85,18 +86,6 @@ def remove_blobs(filename):
         for b in blobs:
             if args.verbose: print(f"\tRemoving blob {b}")
             blob_container.delete_blob(b)
-
-def before_retry_sleep(retry_state):
-    if args.verbose: print(f"Rate limited on the OpenAI embeddings API, sleeping before retrying...")
-
-@retry(wait=wait_random_exponential(min=20, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
-def compute_embedding(text):
-    if args.openaiapikey:
-        embed = openai.Embedding.create(input=text, model=args.openaiembedmodel)["data"][0]["embedding"]
-    else:
-        embed = openai.Embedding.create(engine=args.openaiembeddingdeployment, input=text)["data"][0]["embedding"]
-    if embed and args.verbose: print("Successfully embedded")
-    return embed
 
 def check_index_exist(index_client, index_name):
     if args.verbose: print(f"Ensuring search index {index_name} exists")
@@ -182,6 +171,12 @@ def remove_from_index(filename):
         # It can take a few seconds for search results to reflect changes, so wait a bit
         time.sleep(2)
 
+# refresh openai token every 5 minutes
+def refresh_openai_token():
+    if open_ai_token_cache[CACHE_KEY_TOKEN_TYPE] == 'azure_ad' and open_ai_token_cache[CACHE_KEY_CREATED_TIME] + 300 < time.time():
+        token_cred = open_ai_token_cache[CACHE_KEY_TOKEN_CRED]
+        openai.api_key = token_cred.get_token("https://cognitiveservices.azure.com/.default").token
+        open_ai_token_cache[CACHE_KEY_CREATED_TIME] = time.time()
 
 if __name__ == "__main__":
 
@@ -190,6 +185,7 @@ if __name__ == "__main__":
         epilog="Example: prepdocs.py '..\data\*' --storageaccount myaccount --container mycontainer --searchservice mysearch --index myindex -v"
         )
     parser.add_argument("files", help="Files to be processed")
+    parser.add_argument("--openaiapiversion", required=True, help="OpenAI API version")
     parser.add_argument("--category", help="Value for the category field in the search index for all sections indexed in this run")
     parser.add_argument("--skipblobs", action="store_true", help="Skip uploading individual pages to Azure Blob Storage")
     parser.add_argument("--storageaccount", help="Azure Blob Storage account name")
@@ -235,7 +231,9 @@ if __name__ == "__main__":
                                 gptdeployment=args.openaigptdeployment)
     
     code_splitter = CodeSplitter()
-    email_splitter = EmailSplitter()
+    email_splitter = EmailSplitter(openaikey=args.openaikey,
+                                openaiservice=args.openaiservice,
+                                gptdeployment=args.openaigptdeployment)
     
     indexes = {
         "ros": args.indexros,
@@ -260,7 +258,6 @@ if __name__ == "__main__":
             exit(1)
         formrecognizer_creds = default_creds if args.formrecognizerkey == None else AzureKeyCredential(args.formrecognizerkey)
 
-    ### Comment out all things related to Azure OpenAI service
     if use_vectors:
         # If OpenAI API key provided, use OpenAI API directly
         if args.openaiapikey:
@@ -270,12 +267,15 @@ if __name__ == "__main__":
             if args.openaikey == None:
                 openai.api_key = azd_credential.get_token("https://cognitiveservices.azure.com/.default").token
                 openai.api_type = "azure_ad"
+                open_ai_token_cache[CACHE_KEY_CREATED_TIME] = time.time()
+                open_ai_token_cache[CACHE_KEY_TOKEN_CRED] = azd_credential
+                open_ai_token_cache[CACHE_KEY_TOKEN_TYPE] = "azure_ad"
             else:
                 openai.api_type = "azure"
                 openai.api_key = args.openaikey
 
             openai.api_base = f"https://{args.openaiservice}.openai.azure.com"
-            openai.api_version = "2023-05-15"
+            openai.api_version = args.openaiapiversion
 
     if args.removeall:
         remove_blobs(None)
@@ -297,6 +297,7 @@ if __name__ == "__main__":
                 # if not args.skipblobs:
                 #     upload_blobs(filename)
                 # page_map = get_document_text(filename)
+                refresh_openai_token()
                 
                 path = Path(filepath)
                 index_type = path.parent.absolute().name.split('/')[-1]
@@ -309,4 +310,6 @@ if __name__ == "__main__":
                     print("===========END SPLIT=========")
 
                 sections = splitter.create_section(filepath, splits)
+                # for s in sections:
+                #     pass
                 index_sections(filepath, sections, indexes)

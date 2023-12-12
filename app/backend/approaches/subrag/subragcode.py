@@ -178,7 +178,6 @@ Answer: {chat_content}
         all_supporting_contents += f"Request: {query_text}\n{supporting_content}\n\n"
         
         # STEP 2: Generate a contextual and content specific answer using the search results and chat history
-        # Allow client to replace the entire prompt, or to inject into the existing prompt using >>>
         system_message = ChatRAGPrompt.system_message_chat_conversation
 
         user_conv = ChatRAGPrompt.user_chat_template.format(content=supporting_content, 

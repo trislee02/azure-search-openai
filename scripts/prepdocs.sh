@@ -24,6 +24,7 @@ echo Running $MAIN_FILE
 # Please provide storage key and search key directly if use existing resources instead of executing "azd provision"
 # ./scripts/.venv/bin/python ./prepdocs.py './data/*' --storageaccount "$AZURE_STORAGE_ACCOUNT" --container "$AZURE_STORAGE_CONTAINER" --searchservice "$AZURE_SEARCH_SERVICE" --index "$AZURE_SEARCH_INDEX" --formrecognizerservice "$AZURE_FORMRECOGNIZER_SERVICE" --tenantid "$AZURE_TENANT_ID" --openaiapikey "$OPENAI_API_KEY" -v
 .venv/bin/python ./$MAIN_FILE '../data/**/*.*'\
+                --openaiapiversion "$OPENAI_API_VERSION"\
                 --storagekey "$AZURE_STORAGE_ACCOUNT_KEY"\
                 --searchkey "$AZURE_SEARCH_SERVICE_KEY"\
                 --storageaccount "$AZURE_STORAGE_ACCOUNT"\

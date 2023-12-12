@@ -3,6 +3,7 @@ from collections import defaultdict
 
 import openai
 import tiktoken
+import ast
 import json
 from azure.search.documents import SearchClient
 from azure.search.documents.models import QueryType
@@ -14,7 +15,15 @@ from core.modelhelper import get_token_limit
 
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 
-from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt, ChatMultiSearchPrompt, ChatGeneralPrompt, IntentClassificationPrompt
+from approaches.promptutils import (
+    ChatRAGPrompt, 
+    ChatVectorComparePrompt, 
+    ChatMultiSearchPrompt, 
+    ChatGeneralPrompt, 
+    IntentClassificationPrompt,
+    RequestExtractionRefinePrompt
+)
+
 from scipy.spatial.distance import cosine
 
 from core.modelhelper import num_tokens_from_chat_messages
@@ -32,30 +41,40 @@ class ChatRAGMultiRAGApproach(Approach):
         4. Merge all the responses to generate the final response
     """
 
-    class RAGIntent:
-        TEXT = "text"
+    class SubRAGList:
+        LUXAI = "luxai"
         CODE = "code"
         ROS = "ros"
+        EMAIL = "email"
+
+    class RequestIntent:
+        NO_REQUEST = 0
+        CODE_GENERATION = 1
+        SCHEDULE_MEETING = 2
+        OTHERS = 3
 
     # Chat roles
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
 
-    LOG_ANSWER_FOR_REQUEST = """\nRequest: {query_text}
-
+    LOG_ANSWER_FOR_REQUEST = """\nQuestion: {query_text}
 Answer: {chat_content}
 ------------------
 """
 
     THRESHOLD_NO_ANSWER = 0.25
-    THRESHOLD_REQUEST_CODE = 0.23
 
-    MAX_TRY = 3
+    MAX_TRY_REFINE_REQUESTS = 3
 
-    DISCLAIMER_FOR_PLAIN_LLM = """
+
+
+    DISCLAIMER_FOR_PLAIN_LLM = {"DISCLAIMER_FOR_PLAIN_LLM": """
 This is LLM-self generated answer based on pre-existing knowledge, not directly related to LuxAI document.
-"""
+"""}
+    DISCLAIMER_SCHEDULING_MEETING = {"DISCLAIMER_SCHEDULING_MEETING": """
+The customer requests to schedule a meeting which should be handled by human.
+"""}
 
     def __init__(self, 
                  search_clients: defaultdict[SearchClient],
@@ -73,8 +92,9 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         super().__init__()
         
         self.search_client_code = search_clients["code"]
-        self.search_client_text = search_clients["text"]
+        self.search_client_luxai = search_clients["luxai"]
         self.search_client_ros = search_clients["ros"]
+        self.search_client_email = search_clients["email"]
 
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
@@ -89,7 +109,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         self.completion_model = completion_model
 
         self.sub_rags = {
-            self.RAGIntent.CODE: SubRAGCode(search_client=self.search_client_code, 
+            self.SubRAGList.CODE: SubRAGCode(search_client=self.search_client_code, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -99,7 +119,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
-            self.RAGIntent.TEXT: SubRAGText(search_client=self.search_client_text, 
+            self.SubRAGList.LUXAI: SubRAGText(search_client=self.search_client_luxai, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -110,7 +130,18 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
-            self.RAGIntent.ROS: SubRAGText(search_client=self.search_client_ros, 
+            self.SubRAGList.ROS: SubRAGText(search_client=self.search_client_ros, 
+                               sourcepage_field=sourcepage_field,
+                               content_field=content_field,
+                               embedding_field=embedding_field,
+                               prefix_field=prefix_field,
+                               chatgpt_model=chatgpt_model,
+                               embed_model=embed_model,
+                               chatgpt_deployment=chatgpt_deployment,
+                               embedding_deployment=embedding_deployment,
+                               completion_deployment=completion_deployment,
+                               completion_model=completion_model),
+            self.SubRAGList.EMAIL: SubRAGText(search_client=self.search_client_email, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
@@ -124,7 +155,11 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         }
 
     def before_retry_sleep(retry_state):
-        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+        try:
+            print(f"Rate limited on the OpenAI API, sleeping before retrying...")
+            retry_state.outcome.result()
+        except Exception as e:
+            print(e)
 
     @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
     def __compute_chat_completion(self, messages, temperature, max_tokens, n):
@@ -153,23 +188,6 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         # return gpt_response.usage["completion_tokens"]
         return gpt_response.usage["total_tokens"]
     
-    def __compute_completion(self, prompt, temperature, max_tokens=4097):
-        completion = None
-        if self.completion_deployment != "":
-            completion = openai.Completion.create(
-                deployment_id=self.completion_deployment,
-                model=self.completion_model,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens)
-        else:
-            completion = openai.Completion.create(
-                model=self.completion_model,
-                prompt=prompt, 
-                temperature=temperature, 
-                max_tokens=max_tokens)
-        return completion
-
     def __compute_embedding(self, text): 
         if self.embedding_deployment != "":
             vector = openai.Embedding.create(engine=self.embedding_deployment, input=text)["data"][0]["embedding"]                
@@ -177,7 +195,48 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
             vector = openai.Embedding.create(input=text, model=self.embed_model)["data"][0]["embedding"]
         return vector
 
+    def __check_request(self, request: str):
+        messages = self.get_messages_from_history(
+            RequestExtractionRefinePrompt.system_message_check,
+            self.chatgpt_model,
+            [],
+            RequestExtractionRefinePrompt.user_content_template_check.format(request=request)
+        )
+
+        chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                         temperature=0.0, 
+                                                         max_tokens=self.chatgpt_token_limit, 
+                                                         n=1)
+
+        tokens_count = self.__count_tokens(chat_completion)
+        reasoning = chat_completion.choices[0].message.content
+
+        if RequestExtractionRefinePrompt.SUFFICIENT_TOKEN in reasoning:
+            return True, tokens_count
+        else:
+            return False, tokens_count
+    
+    def __refine_request(self, request: str, message: str, chat_history: str):
+        messages = self.get_messages_from_history(
+            RequestExtractionRefinePrompt.system_message_refine,
+            self.chatgpt_model,
+            [],
+            RequestExtractionRefinePrompt.user_content_template_refine.format(original_request=request,
+                                                                              current_message=message,
+                                                                              conversation_history=chat_history)
+        )
+
+        chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                         temperature=0.0, 
+                                                         max_tokens=self.chatgpt_token_limit, 
+                                                         n=1)
+
+        tokens_count = self.__count_tokens(chat_completion)
+        refined_request = chat_completion.choices[0].message.content
+        return refined_request, tokens_count
+
     def __extract_main_requests(self, history: Sequence[dict[str, str]]) -> list[str]:
+        tokens_count = 0
 
         history_list = self.__parse_history(history)
 
@@ -191,15 +250,39 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
             ChatMultiSearchPrompt.few_shots
         )
 
-        print(messages)
-
         chat_completion = self.__compute_chat_completion(messages=messages, 
                                                          temperature=0.0, 
                                                          max_tokens=self.chatgpt_token_limit, 
                                                          n=1)
 
-        tokens_count = self.__count_tokens(chat_completion)
-        extracted_requests = chat_completion.choices[0].message.content.strip().split("\n")
+        tokens_count += self.__count_tokens(chat_completion)
+        chat_content = chat_completion.choices[0].message.content.strip()
+        try:
+            extracted_requests = ast.literal_eval(chat_content)
+        except:
+            extracted_requests = chat_content.split("\n")
+
+        # Check understandability and refine extracted requests
+        for i, request in enumerate(extracted_requests):
+            understandable = False # A request that is understandable has sufficient context in that.
+            tries = 0
+            while not understandable and tries < self.MAX_TRY_REFINE_REQUESTS:
+                if tries > 0:
+                    print(f"Original request:\t{request}")
+                    response, tokens = self.__refine_request(request=request,
+                                                    message=history[-1]["user"],
+                                                    chat_history=history_list_str)   
+                    try:
+                        response = ast.literal_eval(response)
+                        request = response["refined_request"]
+                    except:
+                        request = request + "."
+                    print(f"Refined request:\t{request}")
+                    tokens_count += tokens
+                understandable, tokens = self.__check_request(request)
+                tokens_count += tokens
+                tries += 1
+            extracted_requests[i] = request
 
         # Check whether no questions found
         if len(extracted_requests) == 1 and extracted_requests[0] == "0":
@@ -208,14 +291,26 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
 
     def __classify_request_intent(self, request: str):
         # Check whether the query is asking for code generation
-        request_vector = self.__compute_embedding(request)
-        request_code_distance = cosine(IntentClassificationPrompt.request_code_vector, request_vector)
-        print(f"Request code distance: {request_code_distance}")
-        # If the request is a normal text generation
-        if (request_code_distance > self.THRESHOLD_REQUEST_CODE):
-            return self.RAGIntent.TEXT
-        else:
-            return self.RAGIntent.CODE
+        user_conv = IntentClassificationPrompt.user_content_template.format(request=request)
+
+        messages = [{"role":"system","content": IntentClassificationPrompt.system_message},
+                    {"role":"user","content": user_conv}]
+        
+        chat_completion = self.__compute_chat_completion(messages=messages, 
+                                                        temperature=0.0, 
+                                                        max_tokens=self.chatgpt_token_limit, 
+                                                        n=1)
+                
+        tokens_count = self.__count_tokens(chat_completion)
+
+        chat_content = chat_completion.choices[0].message.content.strip()
+        print(chat_content)
+        try:
+            intent = int(chat_content.split("[Intent]:")[-1])
+        except:
+            intent = 3
+        
+        return intent, tokens_count   
 
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
         all_answers = "" # Raw answer contains separated responses for requests
@@ -227,8 +322,9 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
         contexts = []
         extracted_requests = []
         thoughts = ""
+        followup_message = {}
 
-        overrides["retrieval_mode"] = "vectors"
+        overrides["retrieval_mode"] = "vectors" # "hybrid"
 
         has_answer = False
 
@@ -238,25 +334,29 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
 
         # Check whether no questions found
         if len(extracted_requests) > 0:
-            for request in extracted_requests:
+            for index, request in enumerate(extracted_requests):
                 print(f"Length of extracted_request: {len(extracted_requests)}")
                 request = request.strip()
                 if request == "":
                     continue
                 
                 sub_rags_stack = []
-                request_intent = self.__classify_request_intent(request)
-
+                request_intent, num_tokens = self.__classify_request_intent(request)
+                tokens_count += num_tokens
                 # If it is more likely to be a code-related request, then try code stores first, otherwise do the reverse.
-                if request_intent == self.RAGIntent.CODE:
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.TEXT])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
-                else:
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.TEXT])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.ROS])
-                    sub_rags_stack.append(self.sub_rags[self.RAGIntent.CODE])
+                if request_intent == self.RequestIntent.CODE_GENERATION:
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.CODE])
+                elif request_intent == self.RequestIntent.OTHERS:
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.EMAIL])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.ROS])
+                elif request_intent == self.RequestIntent.SCHEDULE_MEETING:
+                    followup_message.update(self.DISCLAIMER_SCHEDULING_MEETING)
+                    continue
+                else: # No request
+                    continue         
 
+                # Try to find answer using sub-rags
                 sub_answer = {}
                 while sub_answer == {} or (len(sub_rags_stack) > 0 and sub_answer["answer"] == ""):
                     print(f"Number of rags in stack: {len(sub_rags_stack)}")
@@ -267,6 +367,7 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
 
                 if sub_answer["answer"] == "":
                     sub_answer["answer"] = ChatVectorComparePrompt.book_a_meeting_message
+                    followup_message[f"Request {index}"] = f"""Cannot respond to the request: {request}"""""
                 else:
                     has_answer = True
 
@@ -284,9 +385,10 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
 
             messages = [{"role":"system","content": ChatMultiSearchPrompt.system_message_merge_answer},
                         {"role":"user","content": user_conv}]
+            print(messages)
             
             chat_completion = self.__compute_chat_completion(messages=messages, 
-                                                            temperature=overrides.get("temperature") or 0.0, 
+                                                            temperature=ChatMultiSearchPrompt.temperature_merge_answer, 
                                                             max_tokens=self.chatgpt_token_limit, 
                                                             n=1)
                     
@@ -312,11 +414,15 @@ This is LLM-self generated answer based on pre-existing knowledge, not directly 
                 max_tokens=self.chatgpt_token_limit - len(user_msg))            
 
             chat_completion = self.__compute_chat_completion(messages=messages, temperature=0.7, max_tokens=self.chatgpt_token_limit, n=1)
-            final_answer = chat_completion.choices[0].message.content            
-            final_answer += "\n" + self.DISCLAIMER_FOR_PLAIN_LLM
+            final_answer = chat_completion.choices[0].message.content  
+            followup_message.update(self.DISCLAIMER_FOR_PLAIN_LLM)       
             thoughts = self.format_display_message(messages)
             contexts = []
             all_supporting_contents = ""
+
+        if len(followup_message) != 0:
+            followup_message_str = "\n".join(followup_message.values())
+            final_answer += "\n---------------\n" + followup_message_str
 
         return {"data_points": retrieved_docs, 
                 "answer": final_answer,

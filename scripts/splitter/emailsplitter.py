@@ -6,28 +6,78 @@ import json
 import utils
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 import re
+import os
+import csv
 
 warnings.filterwarnings("ignore")
 from pprint import pprint
 
-PROMPT_SYSTEM_EXTRACTING_QA = """Given emails, create a collection of FAQ by extracting customer questions from Customer message and corresponding answers from LuxAI Support. Please do not modify the LuxAI answer.
-Respond in the following valid JSON format.
+# EXTRACTING QUESTIONS FROM EMAILS
+PROMPT_SYSTEM_EXTRACTING_QA = """Given a list of emails from customers and LuxAI Support team, you are required to create a collection of FAQ by finding questions from Customer emails for every part of LuxAI Support emails.
 
+Requirements:
+  - Preserve the context of the customer's question and keep it as much detailed as possible.
+  - Preserve the answers from LuxAI Support and extend the answer as many sentences as possible.
+  - For parts that cannot find the question, leave the question blank "".
+  - The collection of FAQ must cover all LuxAI Support emails.
+  
+Respond in the following valid JSON format.
 JSON format of FAQ:
 [
-{"question": "CUSTOMER QUESTION 1 HERE",
- "answer": "EXTRACTED ANSWER 1 FROM LUXAI"},
- {"question": "CUSTOMER QUESTION 2 HERE",
- "answer": "EXTRACTED ANSWER 2 FROM LUXAI"}
+  {"question": "CUSTOMER QUESTION 1 HERE",
+   "answer": "ANSWER 1 FROM LUXAI"},
+  {"question": "CUSTOMER QUESTION 2 HERE",
+   "answer": "ANSWER 2 FROM LUXAI"}
 ]"""
 
 USER_TEMPLATE_EXTRACTING_QA = """
 Given emails:
-
+```
 {emails}
-
+```
 JSON format of FAQ:
 """
+
+# GENERATE POSSIBLE QUESTIONS
+PROMPT_SYSTEM_GENERATE_QUESTION = """Generate one suitable question for each answer in this list of answers.
+
+Respond in the JSON-formatted list as below:
+JSON-formatted list of answers:
+[
+  {"question": "",
+   "answer": "GIVEN ANSWER 1"},
+  {"question": "",
+   "answer": "GIVEN ANSWER 2"}
+]
+
+JSON-formatted list:
+[
+  {"question": "GENERATED QUESTION 1 FOR GIVEN ANSWER 1",
+   "answer": "GIVEN ANSWER 1"},
+  {"question": "GENERATED QUESTION 2 FOR GIVEN ANSWER 2",
+   "answer": "GIVEN ANSWER 2"}
+]
+"""
+
+USER_TEMPLATE_GENERATE_QUESTION = """
+JSON-formatted list of answers:
+{answers}
+
+JSON-formatted list:
+"""
+
+PROMPT_SYSTEM_SUMMARY = """Given previous emails, summarize the current customer email"""
+
+USER_TEMPLATE_SUMMARY = """
+### Previous emails ###
+{previous_emails}
+
+### Customer email ###
+{current_email}
+
+Summary for current email:
+"""
+
 
 def before_retry_sleep(retry_state):
     # print(f"Rate limited on the OpenAI API, sleeping before retrying...")
@@ -37,11 +87,41 @@ def before_retry_sleep(retry_state):
         print(e)
 
 @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
-def generate_qa(messages, temperature) -> list[str]:
+def generate_summary(current_email, history):
+    history_str = json.dumps(history)
+
+    print("SUMMARIZE THE CUSTOMER EMAIL")
+    user_content = USER_TEMPLATE_SUMMARY.format(previous_emails=history_str,
+                                                current_email=current_email)
+
+    messages = [{"role": "system",  "content": PROMPT_SYSTEM_SUMMARY},
+                {"role": "user",    "content": user_content}]
+    response = openai.ChatCompletion.create(engine="tri-turbo",
+                                            messages = messages,
+                                            temperature=0.0,
+                                            max_tokens=4000,
+                                            top_p=0.95,
+                                            frequency_penalty=0,
+                                            presence_penalty=0,
+                                            stop=None)
+    summary = response.choices[0].message.content
+    return summary  
+
+@retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
+def generate_qa(emails: str, temperature: float = 0.0) -> list[str]:
     list_qa = []
+    list_answers_only = []
+
+    # Extract question-answer pairs
+    print("EXTRACTING QUESTION-ANSWER PAIRS...")
+    user_content = USER_TEMPLATE_EXTRACTING_QA.format(emails=emails)
+
+    messages = [{"role": "system",  "content": PROMPT_SYSTEM_EXTRACTING_QA},
+                {"role": "user",    "content": user_content}]
     response = openai.ChatCompletion.create(engine="tri-turbo",
                                             messages = messages,
                                             temperature=temperature,
+                                            max_tokens=4000,
                                             top_p=0.95,
                                             frequency_penalty=0,
                                             presence_penalty=0,
@@ -49,42 +129,103 @@ def generate_qa(messages, temperature) -> list[str]:
     print(response.choices[0].message.content)
     qa_json = json.loads(response.choices[0].message.content)
     for qa in qa_json:
-        qa_str = f"{qa['question']}\n{qa['answer']}"
-        list_qa.append(qa_str)
+        if qa['question'].strip() == "":
+            list_answers_only.append(qa)
+        else:
+            qa_str = f"{qa['question']}\n{qa['answer']}"
+            list_qa.append(qa_str)
+
+    # Generate questions for answers
+    if len(list_answers_only) > 0:
+        print("GENERATING QUESTIONS...")
+        pprint(list_answers_only)
+        print("========")
+        answers = json.dumps(list_answers_only)
+        user_content = USER_TEMPLATE_GENERATE_QUESTION.format(answers=answers)
+
+        messages = [{"role": "system",  "content": PROMPT_SYSTEM_GENERATE_QUESTION},
+                    {"role": "user",    "content": user_content}]
+        response = openai.ChatCompletion.create(engine="tri-turbo",
+                                                messages = messages,
+                                                temperature=temperature,
+                                                max_tokens=4000,
+                                                top_p=0.95,
+                                                frequency_penalty=0,
+                                                presence_penalty=0,
+                                                stop=None)
+        print(response.choices[0].message.content)
+        qa_json = json.loads(response.choices[0].message.content)
+        for qa in qa_json:
+            qa_str = f"{qa['question']}\n{qa['answer']}"
+            list_qa.append(qa_str)
+    
     return list_qa
 
 def clean_text(text: str) -> str:
-    text = text.replace("\n\n", "\n")
-    return text
+    cleaned_text = re.sub(r'\n{2,}', "\n", text)
+    cleaned_text = cleaned_text.strip()
+    return cleaned_text
+
+def clean_email(text: str):
+    text = re.sub(r'^.{1,20}\n^.{0,15}$', '', text, flags=re.MULTILINE)
+    text = re.sub(r' {2,}', " ", text)
+    text = re.sub(r'\s{2,}', "\n", text)
+    return text.strip()
 
 class EmailSplitter(Splitter):
-    def __init__(self):
-        pass
+    def __init__(self, openaiapikey: str = None, openaikey: str = "", openaiservice: str = "", gptdeployment: str = ""):
+        self.openapikey = openaiapikey
+        self.openaikey = openaikey
+        self.openaiservice = openaiservice
+        self.gptdeployment = gptdeployment
 
     def load(self, filename: str) -> list[Document]:
-        with open(filename, "r", encoding='windows-1252') as f:
-            content = f.read()
-            return [Document(content=content)]
+        documents = []
+        with open(filename) as csv_file:
+            csv_reader = csv.reader(csv_file, delimiter=',')
+            line_count = 0
+            for row in csv_reader:
+                if line_count > 0: # Omit the header 
+                    customer_request = row[0].strip()
+                    luxai_support = clean_email(row[1])
+
+                    if len(customer_request) == 0 and len(luxai_support) > 0:
+                        documents[-1].content += f"\n{luxai_support}"
+                    elif len(luxai_support) > 0 and len(customer_request) > 0:
+                        customer_doc = Document(content=customer_request)
+                        luxai_doc = Document(content=luxai_support)
+
+                        documents.append(customer_doc)
+                        documents.append(luxai_doc) # LuxAI document is always put at the back
+                line_count += 1
+
+        # Ensure they're question-answer pairs
+        assert len(documents) % 2 == 0
+        return documents
 
     def split(self, documents: list[Document]) -> list[Document]:
         segments = []
         
-        all_text = "".join(doc.content for doc in documents)
-        all_text = clean_text(all_text)
+        history = []
 
-        user_content = USER_TEMPLATE_EXTRACTING_QA.format(emails=all_text)
+        for i in range(0, len(documents), 2):
+            customer_email = documents[i].content
+            luxai_support = documents[i+1].content
 
-        messages = [{"role": "system",  "content": PROMPT_SYSTEM_EXTRACTING_QA},
-                    {"role": "user",    "content": user_content}]
-        
-        qa_list = generate_qa(messages=messages, temperature=0.1)
-        for qa in qa_list: segments.append(Document(content=qa))
+            summary = generate_summary(customer_email, history)
+            segment = f"{summary}\n{luxai_support}"
+            segments.append(Document(content=segment))        
+
+            history.append(customer_email)
+
         return segments
 
     def create_section(self, filename: str, documents: list[Document]):
         file_id = utils.filename_to_id(filename)
-
+        file_basename = os.path.basename(filename)
+        f_out = open(f"emails/splits-{file_basename}", "w", encoding="utf-8")
         for i, doc in enumerate(documents):
+            f_out.write(f"{doc.content}\n-------------\n")
             section = {
                 "id": f"{file_id}-page-{i}",
                 "content": doc.content,
@@ -92,35 +233,5 @@ class EmailSplitter(Splitter):
                 "embedding": utils.compute_embedding(doc.content)
             }
             yield section  
+        f_out.close()
     
-
-    
-    def before_retry_sleep(retry_state):
-        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
-
-    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
-    def __generate_summary(self, text: str, previous_parts: str) -> str:
-        system_message = """Given context of the conversation and current messages/emails, write a concise summary for current message."""
-        content_template = """Summary of the preceding parts:
-```
-{summary_previous_parts}
-```
-The current emails/messages:
-```
-{text}
-```
-Introduction for the current part:"""
-        messages = [{"role": "system",  "content": system_message},
-                    {"role": "user",    "content": content_template.format(text=text,
-                                                                           summary_previous_parts=previous_parts)}]
-
-        response = openai.ChatCompletion.create(engine=self.gptdeployment,
-                                                messages = messages,
-                                                temperature=0.7,
-                                                max_tokens=800,
-                                                top_p=0.95,
-                                                frequency_penalty=0,
-                                                presence_penalty=0,
-                                                stop=None)
-
-        return response.choices[0].message.content
