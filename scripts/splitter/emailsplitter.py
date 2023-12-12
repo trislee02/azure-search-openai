@@ -223,15 +223,12 @@ class EmailSplitter(Splitter):
     def create_section(self, filename: str, documents: list[Document]):
         file_id = utils.filename_to_id(filename)
         file_basename = os.path.basename(filename)
-        f_out = open(f"emails/splits-{file_basename}", "w", encoding="utf-8")
         for i, doc in enumerate(documents):
-            f_out.write(f"{doc.content}\n-------------\n")
             section = {
                 "id": f"{file_id}-page-{i}",
                 "content": doc.content,
-                "sourcefile": filename,
+                "sourcefile": file_basename,
                 "embedding": utils.compute_embedding(doc.content)
             }
             yield section  
-        f_out.close()
     

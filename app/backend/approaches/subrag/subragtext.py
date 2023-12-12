@@ -176,7 +176,7 @@ Answer: {chat_content}
                 if "/email/" in doc[self.sourcepage_field]:
                     doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "Frequently Asked Question:\n```" + nonewlines(doc[self.content_field]) + "\n```"
                 else:
-                    doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.prefix_field]) + "\n" + nonewlines(doc[self.content_field])
+                    doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "\n" + nonewlines(doc[self.content_field])
             
             doc_vector = doc[self.embedding_field]
             

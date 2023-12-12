@@ -1,3 +1,4 @@
+import os
 from splitter.splitter import Splitter
 from document.Document import Document
 import warnings
@@ -49,7 +50,7 @@ class CodeSplitter(Splitter):
             section = {
                 "id": f"{file_id}-page-{i}",
                 "content": doc.content,
-                "sourcefile": filename,
+                "sourcefile": os.path.basename(filename),
                 "embedding": utils.compute_embedding(doc.content)
             }
             yield section  

@@ -1,4 +1,5 @@
 import re
+import os
 import openai
 import utils
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
@@ -86,7 +87,7 @@ class MarkdownSplitter(Splitter):
             section = {
                 "id": f"{file_id}-page-{i}",
                 "content": doc.content,
-                "sourcefile": filename,
+                "sourcefile": os.path.basename(filename),
                 "embedding": utils.compute_embedding(doc.content)
             }
             yield section  
