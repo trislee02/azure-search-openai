@@ -12,7 +12,7 @@ const Layout = () => {
                     <Link to="/" className={styles.headerTitleContainer}>
                         <h3 className={styles.headerTitle}>LuxAI S.A. Customer Service</h3>
                     </Link>
-                    <nav>
+                    {/* <nav>
                         <ul className={styles.headerNavList}>
                             <li>
                                 <NavLink to="/" className={({ isActive }) => (isActive ? styles.headerNavPageLinkActive : styles.headerNavPageLink)}>
@@ -37,7 +37,7 @@ const Layout = () => {
                                 </a>
                             </li>
                         </ul>
-                    </nav>
+                    </nav> */}
                     <Link to="https://github.com/trislee02/azure-search-openai/blob/main/CHANGELOG.md" className={styles.headerTitleContainer}>
                         <h4 className={styles.headerRightText}>Version 1.1.0</h4>
                     </Link>
