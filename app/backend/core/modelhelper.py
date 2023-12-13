@@ -73,3 +73,6 @@ def get_oai_chatmodel_tiktok(aoaimodel: str) -> str:
     if aoaimodel not in AOAI_2_OAI and aoaimodel not in MODELS_2_TOKEN_LIMITS:
         raise ValueError(message)
     return AOAI_2_OAI.get(aoaimodel) or aoaimodel
+
+def count_tokens(gpt_response):
+    return gpt_response.usage["total_tokens"]

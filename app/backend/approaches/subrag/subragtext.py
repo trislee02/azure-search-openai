@@ -22,7 +22,7 @@ from approaches.checker.codechecker import CodeChecker
 from approaches.checker.embedtextchecker import EmbedTextChecker
 from approaches.checker.codeattributionchecker import CodeAttributionChecker
 
-from core.modelhelper import num_tokens_from_chat_messages
+from core.modelhelper import num_tokens_from_chat_messages, count_tokens
 
 class SubRAGText(SubRAG):
 
@@ -31,7 +31,8 @@ class SubRAGText(SubRAG):
     USER = "user"
     ASSISTANT = "assistant"
 
-    LOG_ANSWER_FOR_REQUEST = """\nRequest: {query_text}
+    LOG_ANSWER_FOR_REQUEST = """
+Request: {query_text}
 
 Answer: {chat_content}
 ------------------
@@ -98,28 +99,6 @@ Answer: {chat_content}
         
         return completion
     
-    def __count_tokens(self, gpt_response):
-        # return gpt_response.usage["prompt_tokens"]
-        # return gpt_response.usage["completion_tokens"]
-        return gpt_response.usage["total_tokens"]
-    
-    def __compute_completion(self, prompt, temperature, max_tokens=4097):
-        completion = None
-        if self.completion_deployment != "":
-            completion = openai.Completion.create(
-                deployment_id=self.completion_deployment,
-                model=self.completion_model,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens)
-        else:
-            completion = openai.Completion.create(
-                model=self.completion_model,
-                prompt=prompt, 
-                temperature=temperature, 
-                max_tokens=max_tokens)
-        return completion
-
     def __compute_embedding(self, text): 
         if self.embedding_deployment != "":
             vector = openai.Embedding.create(engine=self.embedding_deployment, input=text)["data"][0]["embedding"]                
@@ -128,12 +107,16 @@ Answer: {chat_content}
         return vector
 
     def __retrieve_documents(self, query_text: str, overrides: dict[str, Any]):
+        """
+        Retrieve relevant documents
+        Return:
+            list[str]: list of document content
+            list[list[float]]: list of embeddings of documents
+        """
         has_text = overrides.get("retrieval_mode") in ["text", "hybrid", None]
         has_vector = overrides.get("retrieval_mode") in ["vectors", "hybrid", None]
         use_semantic_captions = True if overrides.get("semantic_captions") and has_text else False
         top = 3
-        exclude_category = overrides.get("exclude_category") or None
-        filter = "category ne '{}'".format(exclude_category.replace("'", "''")) if exclude_category else None
 
         # If retrieval mode includes vectors, compute an embedding for the query
         if has_vector:
@@ -150,7 +133,6 @@ Answer: {chat_content}
         # Use semantic L2 reranker if requested and if retrieval mode is text or hybrid (vectors + text)
         if overrides.get("semantic_ranker") and has_text:
             results = self.search_client.search(query_text, 
-                                        filter=filter,
                                         query_type=QueryType.SEMANTIC, 
                                         query_language="en-us", 
                                         query_speller="lexicon", 
@@ -162,7 +144,6 @@ Answer: {chat_content}
                                         vector_fields="embedding" if query_vector else None)
         else:
             results = self.search_client.search(query_text, 
-                                        filter=filter, 
                                         top=top, 
                                         vector=query_vector, 
                                         top_k=50 if query_vector else None, 
@@ -174,7 +155,7 @@ Answer: {chat_content}
                 doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
             else:
                 if "/email/" in doc[self.sourcepage_field]:
-                    doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "Frequently Asked Question:\n```" + nonewlines(doc[self.content_field]) + "\n```"
+                    doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "FAQ:\n```" + nonewlines(doc[self.content_field]) + "\n```"
                 else:
                     doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "\n" + nonewlines(doc[self.content_field])
             
@@ -202,7 +183,6 @@ Answer: {chat_content}
         all_supporting_contents += f"Request: {query_text}\n{supporting_content}\n\n"
         
         # STEP 2: Generate a contextual and content specific answer using the search results and chat history
-        # Allow client to replace the entire prompt, or to inject into the existing prompt using >>>
         system_message = ChatRAGPrompt.system_message_chat_conversation
         
         user_conv = ChatRAGPrompt.user_chat_template.format(content=supporting_content, 
@@ -220,9 +200,9 @@ Answer: {chat_content}
                                                         temperature=0.0, 
                                                         max_tokens=self.chatgpt_token_limit, 
                                                         n=1)
-        tokens_count += self.__count_tokens(chat_completion)
+        tokens_count += count_tokens(chat_completion)
 
-        chat_content = chat_completion.choices[0].message.content
+        answer = chat_completion.choices[0].message.content
 
         check_logs += f"\nRequest: {query_text}"
         def debug_callback(log):
@@ -230,7 +210,7 @@ Answer: {chat_content}
             check_logs += f"\n{log}"
 
         ## STEP 3: Run checks on LLM's answer
-        # An answer is valid only if it satisfies all checkers
+        # An answer is valid only if it satisfies all checks
         is_valid = False
         tries = 0
         while not is_valid and tries <= self.MAX_TRY:
@@ -246,10 +226,10 @@ Answer: {chat_content}
                                                                 temperature=0.0, 
                                                                 max_tokens=self.chatgpt_token_limit, 
                                                                 n=1)
-                tokens_count += self.__count_tokens(chat_completion)
-                chat_content = chat_completion.choices[0].message.content
+                tokens_count += count_tokens(chat_completion)
+                answer = chat_completion.choices[0].message.content
 
-            previous_answer = chat_content
+            previous_answer = answer
             
             # Check whether LLM's answer is "I don't know"
             answer_vector = self.__compute_embedding(previous_answer)
@@ -261,26 +241,21 @@ Answer: {chat_content}
                 embed_text_checker = EmbedTextChecker(embedding_deployment=self.embedding_deployment)
                 
                 embed_valid = embed_text_checker.check(previous_answer, retrieved_docs, retrieved_doc_embeds, debug_callback)
-                # toxicity_valid = self.selfcheck_toxicity(previous_answer)
-                # print("Toxicity valid:", toxicity_valid)
                 is_valid = embed_valid
                 tries += 1
             else:
                 # All "I don't know" answer is valid
                 is_valid = True
-                chat_content = ""
+                answer = ""
         
         ## Can't find valid answer after a lot of tries, respond "I don't know"
         if not is_valid:
-            # chat_content = ChatVectorComparePrompt.no_answer_message
-            # chat_content = ChatVectorComparePrompt.book_a_meeting_message
-            chat_content = ""
+            answer = ""
         
-        request_answer = chat_content
         thoughts = self.format_display_message(text=check_logs)
 
         return {"data_points": retrieved_docs, 
-                "answer": request_answer,
+                "answer": answer,
                 "supporting_contents": all_supporting_contents,
                 "token_usage": tokens_count,
                 "thoughts": thoughts, }

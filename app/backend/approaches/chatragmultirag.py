@@ -26,18 +26,17 @@ from approaches.promptutils import (
 
 from scipy.spatial.distance import cosine
 
-from core.modelhelper import num_tokens_from_chat_messages
+from core.modelhelper import num_tokens_from_chat_messages, count_tokens
 
 from approaches.subrag.subragcode import SubRAGCode
 from approaches.subrag.subragtext import SubRAGText
-
 
 class ChatRAGMultiRAGApproach(Approach):
     """
     This approach includes following steps:
         1. Extract main requests of message based on new message and chat history
         2. For each request, run intent classification
-        3. Run sub-RAG for each request
+        3. Run sub-RAG stack for each request
         4. Merge all the responses to generate the final response
     """
 
@@ -58,7 +57,8 @@ class ChatRAGMultiRAGApproach(Approach):
     USER = "user"
     ASSISTANT = "assistant"
 
-    LOG_ANSWER_FOR_REQUEST = """\nQuestion: {query_text}
+    LOG_ANSWER_FOR_REQUEST = """
+Question: {query_text}
 Answer: {chat_content}
 ------------------
 """
@@ -66,8 +66,6 @@ Answer: {chat_content}
     THRESHOLD_NO_ANSWER = 0.25
 
     MAX_TRY_REFINE_REQUESTS = 3
-
-
 
     DISCLAIMER_FOR_PLAIN_LLM = {"DISCLAIMER_FOR_PLAIN_LLM": """
 This is LLM-self generated answer based on pre-existing knowledge, not directly related to LuxAI document.
@@ -183,19 +181,13 @@ The customer requests to schedule a meeting which should be handled by human.
         
         return completion
     
-    def __count_tokens(self, gpt_response):
-        # return gpt_response.usage["prompt_tokens"]
-        # return gpt_response.usage["completion_tokens"]
-        return gpt_response.usage["total_tokens"]
-    
-    def __compute_embedding(self, text): 
-        if self.embedding_deployment != "":
-            vector = openai.Embedding.create(engine=self.embedding_deployment, input=text)["data"][0]["embedding"]                
-        else:
-            vector = openai.Embedding.create(input=text, model=self.embed_model)["data"][0]["embedding"]
-        return vector
-
     def __check_request(self, request: str):
+        """
+        Check whether a request provides sufficient context using LLM
+        Return:
+            bool: whether a request provides sufficient context or not
+            int: token usage
+        """
         messages = self.get_messages_from_history(
             RequestExtractionRefinePrompt.system_message_check,
             self.chatgpt_model,
@@ -208,7 +200,7 @@ The customer requests to schedule a meeting which should be handled by human.
                                                          max_tokens=self.chatgpt_token_limit, 
                                                          n=1)
 
-        tokens_count = self.__count_tokens(chat_completion)
+        tokens_count = count_tokens(chat_completion)
         reasoning = chat_completion.choices[0].message.content
 
         if RequestExtractionRefinePrompt.SUFFICIENT_TOKEN in reasoning:
@@ -217,6 +209,12 @@ The customer requests to schedule a meeting which should be handled by human.
             return False, tokens_count
     
     def __refine_request(self, request: str, message: str, chat_history: str):
+        """
+        Refine a request by elaborating on the context
+        Return:
+            str: refined request
+            int: token usage
+        """
         messages = self.get_messages_from_history(
             RequestExtractionRefinePrompt.system_message_refine,
             self.chatgpt_model,
@@ -231,11 +229,18 @@ The customer requests to schedule a meeting which should be handled by human.
                                                          max_tokens=self.chatgpt_token_limit, 
                                                          n=1)
 
-        tokens_count = self.__count_tokens(chat_completion)
+        tokens_count = count_tokens(chat_completion)
         refined_request = chat_completion.choices[0].message.content
         return refined_request, tokens_count
 
-    def __extract_main_requests(self, history: Sequence[dict[str, str]]) -> list[str]:
+    def __extract_main_requests(self, history: Sequence[dict[str, str]]):
+        """
+        Extract main requests from the latest message based on the conversation history.
+        Also, refine the initial generated request if it provides insufficient context.
+        Return:
+            int: token usage
+            list[str]: list of extracted requests
+        """
         tokens_count = 0
 
         history_list = self.__parse_history(history)
@@ -255,8 +260,9 @@ The customer requests to schedule a meeting which should be handled by human.
                                                          max_tokens=self.chatgpt_token_limit, 
                                                          n=1)
 
-        tokens_count += self.__count_tokens(chat_completion)
+        tokens_count += count_tokens(chat_completion)
         chat_content = chat_completion.choices[0].message.content.strip()
+        # chat_content should be a string of list[string]
         try:
             extracted_requests = ast.literal_eval(chat_content)
         except:
@@ -268,17 +274,18 @@ The customer requests to schedule a meeting which should be handled by human.
             tries = 0
             while not understandable and tries < self.MAX_TRY_REFINE_REQUESTS:
                 if tries > 0:
-                    print(f"Original request:\t{request}")
                     response, tokens = self.__refine_request(request=request,
                                                     message=history[-1]["user"],
                                                     chat_history=history_list_str)   
+                    tokens_count += tokens
                     try:
+                        # Response should be a dictionry
                         response = ast.literal_eval(response)
                         request = response["refined_request"]
                     except:
+                        # Because temperature is 0, so need a different request for a different response later
                         request = request + "."
-                    print(f"Refined request:\t{request}")
-                    tokens_count += tokens
+
                 understandable, tokens = self.__check_request(request)
                 tokens_count += tokens
                 tries += 1
@@ -290,21 +297,21 @@ The customer requests to schedule a meeting which should be handled by human.
         return tokens_count, extracted_requests
 
     def __classify_request_intent(self, request: str):
-        # Check whether the query is asking for code generation
+        """
+        Classifiy the intent of request by using LLM
+        Return:
+            str: intent of request
+            int: token usage
+        """
         user_conv = IntentClassificationPrompt.user_content_template.format(request=request)
-
         messages = [{"role":"system","content": IntentClassificationPrompt.system_message},
                     {"role":"user","content": user_conv}]
-        
         chat_completion = self.__compute_chat_completion(messages=messages, 
                                                         temperature=0.0, 
                                                         max_tokens=self.chatgpt_token_limit, 
                                                         n=1)
-                
-        tokens_count = self.__count_tokens(chat_completion)
-
+        tokens_count = count_tokens(chat_completion)
         chat_content = chat_completion.choices[0].message.content.strip()
-        print(chat_content)
         try:
             intent = int(chat_content.split("[Intent]:")[-1])
         except:
@@ -314,7 +321,6 @@ The customer requests to schedule a meeting which should be handled by human.
 
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any]) -> Any:
         all_answers = "" # Raw answer contains separated responses for requests
-        check_logs = ""
         all_supporting_contents = ""
         tokens_count = 0
         retrieved_docs = []
@@ -324,9 +330,9 @@ The customer requests to schedule a meeting which should be handled by human.
         thoughts = ""
         followup_message = {}
 
-        overrides["retrieval_mode"] = "vectors" # "hybrid"
+        overrides["retrieval_mode"] = "vectors" # Use vectors for retrieval only. Other choices: "hybrid", "text".
 
-        has_answer = False
+        has_answer = False # Whether the LLM finds answer to respond
 
         # STEP 1: Extract requests in message
         num_tokens, extracted_requests = self.__extract_main_requests(history=history)
@@ -335,7 +341,6 @@ The customer requests to schedule a meeting which should be handled by human.
         # Check whether no questions found
         if len(extracted_requests) > 0:
             for index, request in enumerate(extracted_requests):
-                print(f"Length of extracted_request: {len(extracted_requests)}")
                 request = request.strip()
                 if request == "":
                     continue
@@ -359,10 +364,7 @@ The customer requests to schedule a meeting which should be handled by human.
                 # Try to find answer using sub-rags
                 sub_answer = {}
                 while sub_answer == {} or (len(sub_rags_stack) > 0 and sub_answer["answer"] == ""):
-                    print(f"Number of rags in stack: {len(sub_rags_stack)}")
-                    print(f"Request: {request}")
                     sub_rag = sub_rags_stack.pop(0)
-
                     sub_answer = sub_rag.run(history, overrides, query_text=request)
 
                 if sub_answer["answer"] == "":
@@ -385,25 +387,20 @@ The customer requests to schedule a meeting which should be handled by human.
 
             messages = [{"role":"system","content": ChatMultiSearchPrompt.system_message_merge_answer},
                         {"role":"user","content": user_conv}]
-            print(messages)
             
             chat_completion = self.__compute_chat_completion(messages=messages, 
                                                             temperature=ChatMultiSearchPrompt.temperature_merge_answer, 
                                                             max_tokens=self.chatgpt_token_limit, 
                                                             n=1)
                     
-            tokens_count += self.__count_tokens(chat_completion)
+            tokens_count += count_tokens(chat_completion)
             final_answer = chat_completion.choices[0].message.content
-            # print(f"Final answer: {final_answer}")
 
             contexts = [all_answers]
-
-            # msg_to_display = self.format_display_message(messages)
-            # msg_to_display = self.format_display_message(text=msg_to_display)
             thoughts = self.format_display_message(text=thoughts)
 
+        # Use plain LLM to generate answer if no answer found or no request extracted
         if len(extracted_requests) == 0 or not has_answer:
-            print("No request or answer found!")
             user_msg = ChatGeneralPrompt.user_message_template.format(message=history[-1]["user"])  
 
             messages = self.get_messages_from_history(
