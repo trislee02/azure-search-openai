@@ -30,6 +30,7 @@ from core.modelhelper import num_tokens_from_chat_messages, count_tokens
 
 from approaches.subrag.subragcode import SubRAGCode
 from approaches.subrag.subragtext import SubRAGText
+from approaches.subrag.subragcomposite import SubRAGComposite
 
 class ChatRAGMultiRAGApproach(Approach):
     """
@@ -45,6 +46,7 @@ class ChatRAGMultiRAGApproach(Approach):
         CODE = "code"
         ROS = "ros"
         EMAIL = "email"
+        COMPOSITE = "composite"
 
     class RequestIntent:
         NO_REQUEST = 0
@@ -150,6 +152,18 @@ The customer requests to schedule a meeting which should be handled by human.
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
+            self.SubRAGList.COMPOSITE: SubRAGComposite(search_clients=[self.search_client_email,
+                                                                        self.search_client_luxai],
+                                                        sourcepage_field=sourcepage_field,
+                                                        content_field=content_field,
+                                                        embedding_field=embedding_field,
+                                                        prefix_field=prefix_field,
+                                                        chatgpt_model=chatgpt_model,
+                                                        embed_model=embed_model,
+                                                        chatgpt_deployment=chatgpt_deployment,
+                                                        embedding_deployment=embedding_deployment,
+                                                        completion_deployment=completion_deployment,
+                                                        completion_model=completion_model),
         }
 
     def before_retry_sleep(retry_state):
@@ -352,8 +366,9 @@ The customer requests to schedule a meeting which should be handled by human.
                 if request_intent == self.RequestIntent.CODE_GENERATION:
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.CODE])
                 elif request_intent == self.RequestIntent.OTHERS:
-                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.EMAIL])
-                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
+                    # sub_rags_stack.append(self.sub_rags[self.SubRAGList.EMAIL])
+                    # sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.ROS])
                 elif request_intent == self.RequestIntent.SCHEDULE_MEETING:
                     followup_message.update(self.DISCLAIMER_SCHEDULING_MEETING)

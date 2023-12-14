@@ -24,7 +24,7 @@ from approaches.checker.codeattributionchecker import CodeAttributionChecker
 
 from core.modelhelper import num_tokens_from_chat_messages, count_tokens
 
-class SubRAGText(SubRAG):
+class SubRAGComposite(SubRAG):
 
     # Chat roles
     SYSTEM = "system"
@@ -43,7 +43,7 @@ Answer: {chat_content}
     MAX_TRY = 3
 
     def __init__(self, 
-                 search_client: SearchClient, 
+                 search_clients: list[SearchClient], 
                  sourcepage_field: str, 
                  content_field: str,
                  embedding_field: str,
@@ -56,7 +56,7 @@ Answer: {chat_content}
                  completion_model = ""):
         super().__init__()
         
-        self.search_client = search_client
+        self.search_clients = search_clients
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
         self.embedding_field = embedding_field
@@ -117,6 +117,9 @@ Answer: {chat_content}
         has_vector = overrides.get("retrieval_mode") in ["vectors", "hybrid", None]
         use_semantic_captions = True if overrides.get("semantic_captions") and has_text else False
         top = 3
+        retrieved_docs = []
+        retrieved_doc_embeds = []
+        results = []
 
         # If retrieval mode includes vectors, compute an embedding for the query
         if has_vector:
@@ -130,27 +133,30 @@ Answer: {chat_content}
 
         overrides["semantic_ranker"] = True
 
-        # Use semantic L2 reranker if requested and if retrieval mode is text or hybrid (vectors + text)
-        if overrides.get("semantic_ranker") and has_text:
-            results = self.search_client.search(query_text, 
-                                        query_type=QueryType.SEMANTIC, 
-                                        query_language="en-us", 
-                                        query_speller="lexicon", 
-                                        semantic_configuration_name="default", 
-                                        top=top, 
-                                        query_caption="extractive|highlight-false" if use_semantic_captions else None,
-                                        vector=query_vector, 
-                                        top_k=50 if query_vector else None,
-                                        vector_fields="embedding" if query_vector else None)
-        else:
-            results = self.search_client.search(query_text, 
-                                        top=top, 
-                                        vector=query_vector, 
-                                        top_k=50 if query_vector else None, 
-                                        vector_fields="embedding" if query_vector else None)
-        retrieved_docs = []
-        retrieved_doc_embeds = []
-        for doc in results:
+        for search_client in self.search_clients:
+            # Use semantic L2 reranker if requested and if retrieval mode is text or hybrid (vectors + text)
+            if overrides.get("semantic_ranker"):
+                print("Using semantic reranker")
+                r = search_client.search(query_text, 
+                                            query_type=QueryType.SEMANTIC, 
+                                            query_language="en-us", 
+                                            query_speller="lexicon", 
+                                            semantic_configuration_name="default", 
+                                            top=top, 
+                                            query_caption="extractive|highlight-false" if use_semantic_captions else None,
+                                            vector=query_vector, 
+                                            top_k=50 if query_vector else None,
+                                            vector_fields="embedding" if query_vector else None)
+            else:
+                r = search_client.search(query_text, 
+                                            top=top, 
+                                            vector=query_vector, 
+                                            top_k=50 if query_vector else None, 
+                                            vector_fields="embedding" if query_vector else None)
+            results.extend(r)
+        results.sort(key=lambda x: x['@search.rerankerScore'], reverse=True)
+
+        for doc in results[:top]:
             if use_semantic_captions:
                 doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
             else:
