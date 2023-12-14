@@ -46,7 +46,8 @@ class ChatRAGMultiRAGApproach(Approach):
         CODE = "code"
         ROS = "ros"
         EMAIL = "email"
-        COMPOSITE = "composite"
+        COMPOSITE_TEXT = "composite_text"
+        COMPOSITE_CODE = "composite_code"
 
     class RequestIntent:
         NO_REQUEST = 0
@@ -95,6 +96,11 @@ The customer requests to schedule a meeting which should be handled by human.
         self.search_client_luxai = search_clients["luxai"]
         self.search_client_ros = search_clients["ros"]
         self.search_client_email = search_clients["email"]
+        
+        search_components_code = [SubRAGComposite.SearchComponent(search_client=self.search_client_luxai),
+                                  SubRAGComposite.SearchComponent(search_client=self.search_client_code, use_reranker=False)]
+        search_components_text = [SubRAGComposite.SearchComponent(search_client=self.search_client_luxai),
+                                  SubRAGComposite.SearchComponent(search_client=self.search_client_email)]
 
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
@@ -152,8 +158,18 @@ The customer requests to schedule a meeting which should be handled by human.
                                embedding_deployment=embedding_deployment,
                                completion_deployment=completion_deployment,
                                completion_model=completion_model),
-            self.SubRAGList.COMPOSITE: SubRAGComposite(search_clients=[self.search_client_email,
-                                                                        self.search_client_luxai],
+            self.SubRAGList.COMPOSITE_TEXT: SubRAGComposite(search_components=search_components_text,
+                                                        sourcepage_field=sourcepage_field,
+                                                        content_field=content_field,
+                                                        embedding_field=embedding_field,
+                                                        prefix_field=prefix_field,
+                                                        chatgpt_model=chatgpt_model,
+                                                        embed_model=embed_model,
+                                                        chatgpt_deployment=chatgpt_deployment,
+                                                        embedding_deployment=embedding_deployment,
+                                                        completion_deployment=completion_deployment,
+                                                        completion_model=completion_model),
+            self.SubRAGList.COMPOSITE_CODE: SubRAGComposite(search_components=search_components_code,
                                                         sourcepage_field=sourcepage_field,
                                                         content_field=content_field,
                                                         embedding_field=embedding_field,
@@ -364,11 +380,12 @@ The customer requests to schedule a meeting which should be handled by human.
                 tokens_count += num_tokens
                 # If it is more likely to be a code-related request, then try code stores first, otherwise do the reverse.
                 if request_intent == self.RequestIntent.CODE_GENERATION:
+                    # sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE_CODE])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.CODE])
                 elif request_intent == self.RequestIntent.OTHERS:
                     # sub_rags_stack.append(self.sub_rags[self.SubRAGList.EMAIL])
-                    # sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
-                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE_TEXT])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.ROS])
                 elif request_intent == self.RequestIntent.SCHEDULE_MEETING:
                     followup_message.update(self.DISCLAIMER_SCHEDULING_MEETING)

@@ -113,11 +113,6 @@ Answer: {chat_content}
         # Retrieval mode includes vectors, compute an embedding for the query
         query_vector = self.__compute_embedding(query_text)
 
-        # Only keep the text query if the retrieval mode uses text, otherwise drop it
-        if not has_text:
-            query_text = None
-
-        # Use semantic L2 reranker 
         results = self.search_client.search(query_text, 
                                             top=top, 
                                             vector=query_vector, 

@@ -1,4 +1,5 @@
 from typing import Any, Sequence
+from dataclasses import dataclass
 from approaches.subrag.subrag import SubRAG
 
 import openai
@@ -42,8 +43,14 @@ Answer: {chat_content}
 
     MAX_TRY = 3
 
+    @dataclass
+    class SearchComponent:
+        search_client: SearchClient
+        search_mode: str = "vectors"
+        use_reranker: bool = True
+
     def __init__(self, 
-                 search_clients: list[SearchClient], 
+                 search_components: list[SearchComponent], 
                  sourcepage_field: str, 
                  content_field: str,
                  embedding_field: str,
@@ -56,7 +63,7 @@ Answer: {chat_content}
                  completion_model = ""):
         super().__init__()
         
-        self.search_clients = search_clients
+        self.search_components = search_components
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
         self.embedding_field = embedding_field
@@ -106,62 +113,50 @@ Answer: {chat_content}
             vector = openai.Embedding.create(input=text, model=self.embed_model)["data"][0]["embedding"]
         return vector
 
-    def __retrieve_documents(self, query_text: str, overrides: dict[str, Any]):
+    def __retrieve_documents(self, query_text: str):
         """
         Retrieve relevant documents
         Return:
             list[str]: list of document content
             list[list[float]]: list of embeddings of documents
         """
-        has_text = overrides.get("retrieval_mode") in ["text", "hybrid", None]
-        has_vector = overrides.get("retrieval_mode") in ["vectors", "hybrid", None]
-        use_semantic_captions = True if overrides.get("semantic_captions") and has_text else False
         top = 3
         retrieved_docs = []
         retrieved_doc_embeds = []
         results = []
+        is_all_reranker = True
 
-        # If retrieval mode includes vectors, compute an embedding for the query
-        if has_vector:
+        for component in self.search_components:
+            search_client = component.search_client
             query_vector = self.__compute_embedding(query_text)
-        else:
-            query_vector = None
-        
-        # Only keep the text query if the retrieval mode uses text, otherwise drop it
-        if not has_text:
-            query_text = None
-
-        overrides["semantic_ranker"] = True
-
-        for search_client in self.search_clients:
-            # Use semantic L2 reranker if requested and if retrieval mode is text or hybrid (vectors + text)
-            if overrides.get("semantic_ranker"):
-                print("Using semantic reranker")
+            
+            if component.use_reranker:
+                # Use semantic L2 reranker 
+                print(f"{component.search_client._index_name} uses reranker")
                 r = search_client.search(query_text, 
                                             query_type=QueryType.SEMANTIC, 
-                                            query_language="en-us", 
-                                            query_speller="lexicon", 
-                                            semantic_configuration_name="default", 
-                                            top=top, 
-                                            query_caption="extractive|highlight-false" if use_semantic_captions else None,
-                                            vector=query_vector, 
-                                            top_k=50 if query_vector else None,
-                                            vector_fields="embedding" if query_vector else None)
+                                        query_language="en-us", 
+                                        query_speller="lexicon", 
+                                        semantic_configuration_name="default", 
+                                        top=top, 
+                                        query_caption="extractive|highlight-false",
+                                        vector=query_vector, 
+                                        top_k=50 if query_vector else None,
+                                        vector_fields="embedding" if query_vector else None)
             else:
+                print(f"{component.search_client._index_name} does not use reranker")
+                is_all_reranker = False
                 r = search_client.search(query_text, 
                                             top=top, 
                                             vector=query_vector, 
                                             top_k=50 if query_vector else None, 
                                             vector_fields="embedding" if query_vector else None)
             results.extend(r)
-        results.sort(key=lambda x: x['@search.rerankerScore'], reverse=True)
+
+        results.sort(key=lambda x: x['@search.reranker_score'] if is_all_reranker else x['@search.score'], reverse=True)
 
         for doc in results[:top]:
-            if use_semantic_captions:
-                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
-            else:
-                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "\n" + nonewlines(doc[self.content_field])
-            
+            doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "\n" + nonewlines(doc[self.content_field])
             doc_vector = doc[self.embedding_field]
             
             retrieved_docs.append(doc_content)
@@ -180,7 +175,7 @@ Answer: {chat_content}
             query_text = history[-1]["user"]
 
         # STEP 1: Retrieve relevant documents from the search index
-        retrieved_docs, retrieved_doc_embeds = self.__retrieve_documents(query_text=query_text, overrides=overrides)
+        retrieved_docs, retrieved_doc_embeds = self.__retrieve_documents(query_text=query_text)
 
         supporting_content = "\n-------\n".join(retrieved_docs)
         all_supporting_contents += f"Request: {query_text}\n{supporting_content}\n\n"
