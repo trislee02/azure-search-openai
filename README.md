@@ -1,28 +1,18 @@
-# ChatGPT + Enterprise data with Azure OpenAI and Cognitive Search
+# LuxAI Chatbot with Azure OpenAI and Cognitive Search
 
-[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=599293758&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
-[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/azure-search-openai-demo)
+This is a Chatbot used for internal customer email answering at LuxAI.
 
-This sample demonstrates a few approaches for creating ChatGPT-like experiences over your own data using the Retrieval Augmented Generation pattern. It uses Azure OpenAI Service to access the ChatGPT model (gpt-35-turbo), and Azure Cognitive Search for data indexing and retrieval.
-
-The repo includes sample data so it's ready to try end to end. In this sample application we use a fictitious company called Contoso Electronics, and the experience allows its employees to ask questions about the benefits, internal policies, as well as job descriptions and roles.
-
-![RAG Architecture](docs/appcomponents.png)
+![RAG Architecture](docs/MultiRAGArchitecture.png)
 
 ## Features
 
-* Chat and Q&A interfaces
-* Explores various options to help users evaluate the trustworthiness of responses with citations, tracking of source content, etc.
-* Shows possible approaches for data preparation, prompt construction, and orchestration of interaction between model (ChatGPT) and retriever (Cognitive Search)
-* Settings directly in the UX to tweak the behavior and experiment with options
+* Chat interfaces
 
 ![Chat screen](docs/chatscreen.png)
 
 ## Getting Started
 
-> **IMPORTANT:** In order to deploy and run this example, you'll need an **Azure subscription with access enabled for the Azure OpenAI service**. You can request access [here](https://aka.ms/oaiapply). You can also visit [here](https://azure.microsoft.com/free/cognitive-search/) to get some free Azure credits to get you started.
-
-> **AZURE RESOURCE COSTS** by default this sample will create Azure App Service and Azure Cognitive Search resources that have a monthly cost, as well as Form Recognizer resource that has cost per document page. You can switch them to free versions of each of them if you want to avoid this cost by changing the parameters file under the infra folder (though there are some limits to consider; for example, you can have up to 1 free Cognitive Search resource per subscription, and the free Form Recognizer resource only analyzes the first 2 pages of each document.)
+> **IMPORTANT:** In order to deploy and run this project, you'll need an **Azure subscription with access enabled for the Azure OpenAI service**. 
 
 ### Prerequisites
 
@@ -39,23 +29,19 @@ The repo includes sample data so it's ready to try end to end. In this sample ap
 
 >NOTE: Your Azure Account must have `Microsoft.Authorization/roleAssignments/write` permissions, such as [User Access Administrator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#user-access-administrator) or [Owner](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#owner).  
 
-#### To Run in GitHub Codespaces or VS Code Remote Containers
+#### To Run in VS Code Remote Containers
 
-You can run this repo virtually by using GitHub Codespaces or VS Code Remote Containers.  Click on one of the buttons below to open this repo in one of those options.
+You can run this repo virtually in VS Code Remote Containers.  Click on the button below to open this repo in Container.
 
-[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=599293758&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
-[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/azure-search-openai-demo)
+[Remote Development extension pack](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack)
+
+[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/trislee02/azure-search-openai)
 
 ### Installation
 
-#### Project Initialization
-
-1. Create a new folder and switch to it in the terminal
-1. Run `azd auth login`
-1. Run `azd init -t azure-search-openai-demo`
-    * note that this command will initialize a git repository and you do not need to clone this repository
-
 #### Starting from scratch
+
+**Important**: This step will provision a completely new Azure resource. If you do not want it, skip this step.
 
 Execute the following command, if you don't have any pre-existing Azure services and want to start from a fresh deployment.
 
@@ -71,24 +57,41 @@ It will look like the following:
 
 #### Using existing resources
 
-1. Run `azd env set AZURE_OPENAI_SERVICE {Name of existing OpenAI service}`
-1. Run `azd env set AZURE_OPENAI_RESOURCE_GROUP {Name of existing resource group that OpenAI service is provisioned to}`
-1. Run `azd env set AZURE_OPENAI_CHATGPT_DEPLOYMENT {Name of existing ChatGPT deployment}`. Only needed if your ChatGPT deployment is not the default 'chat'.
-1. Run `azd env set AZURE_OPENAI_GPT_DEPLOYMENT {Name of existing GPT deployment}`. Only needed if your ChatGPT deployment is not the default 'davinci'.
-1. Run `azd env set AZURE_OPENAI_EMB_DEPLOYMENT {Name of existing GPT embedding deployment}`. Only needed if your embeddings deployment is not the default 'embedding'.
-1. Run `azd up`
+You can create your own Azure resource and services needed. 
 
-> NOTE: You can also use existing Search and Storage Accounts.  See `./infra/main.parameters.json` for list of environment variables to pass to `azd env set` to configure those existing resources.
+Then, update the environment variables. Go to environment environment file at `.azure/<environment_name>/.env` and configure following variables:
+```
+AZURE_ENV_NAME=""
+AZURE_STORAGE_ACCOUNT=""
+AZURE_STORAGE_ACCOUNT_KEY=""
+AZURE_STORAGE_CONTAINER=""
+
+AZURE_SEARCH_SERVICE=""
+AZURE_SEARCH_SERVICE_KEY=""
+AZURE_SEARCH_INDEX_LUXAI=""
+AZURE_SEARCH_INDEX_CODE=""
+AZURE_SEARCH_INDEX_ROS=""
+AZURE_SEARCH_INDEX_EMAIL=""
+
+# AZURE_OPENAI_KEY=""
+AZURE_OPENAI_SERVICE=""
+AZURE_OPENAI_GPT_35_DEPLOYMENT=""
+AZURE_OPENAI_CHATGPT_35_DEPLOYMENT=""
+AZURE_OPENAI_CHATGPT_35_MODEL=""
+AZURE_OPENAI_EMB_DEPLOYMENT=""
+
+OPENAI_API_VERSION=""
+```
+
+> If you don't have any environment already, create by running
+
+`azd env new <your new environment name>`.
 
 #### Deploying again
 
 If you've only changed the backend/frontend code in the `app` folder, then you don't need to re-provision the Azure resources. You can just run:
 
 ```azd deploy```
-
-If you've changed the infrastructure files (`infra` folder or `azure.yaml`), then you'll need to re-provision the Azure resources. You can do that by running:
-
-```azd up```
 
 #### Running locally
 
@@ -119,73 +122,3 @@ Once in the web app:
 * Explore citations and sources
 * Click on "settings" to try different options, tweak prompts, etc.
 
-## Resources
-
-* [Revolutionize your Enterprise Data with ChatGPT: Next-gen Apps w/ Azure OpenAI and Cognitive Search](https://aka.ms/entgptsearchblog)
-* [Azure Cognitive Search](https://learn.microsoft.com/azure/search/search-what-is-azure-search)
-* [Azure OpenAI Service](https://learn.microsoft.com/azure/cognitive-services/openai/overview)
-
-### Note
-
->Note: The PDF documents used in this demo contain information generated using a language model (Azure OpenAI Service). The information contained in these documents is only for demonstration purposes and does not reflect the opinions or beliefs of Microsoft. Microsoft makes no representations or warranties of any kind, express or implied, about the completeness, accuracy, reliability, suitability or availability with respect to the information contained in this document. All rights reserved to Microsoft.
-
-### FAQ
-
-<details>
-<summary>Why do we need to break up the PDFs into chunks when Azure Cognitive Search supports searching large documents?</summary>
-
-Chunking allows us to limit the amount of information we send to OpenAI due to token limits. By breaking up the content, it allows us to easily find potential chunks of text that we can inject into OpenAI. The method of chunking we use leverages a sliding window of text such that sentences that end one chunk will start the next. This allows us to reduce the chance of losing the context of the text.
-</details>
-
-<details>
-<summary>How can we upload additional PDFs without redeploying everything?</summary>
-
-To upload more PDFs, put them in the data/ folder and run `./scripts/prepdocs.sh` or `./scripts/prepdocs.ps1`. To avoid reuploading existing docs, move them out of the data folder. You could also implement checks to see whats been uploaded before; our code doesn't yet have such checks.
-</details>
-
-### Troubleshooting
-
-Here are the most common failure scenarios and solutions:
-
-1. The subscription (`AZURE_SUBSCRIPTION_ID`) doesn't have access to the Azure OpenAI service. Please ensure `AZURE_SUBSCRIPTION_ID` matches the ID specified in the [OpenAI access request process](https://aka.ms/oai/access).
-
-1. You're attempting to create resources in regions not enabled for Azure OpenAI (e.g. East US 2 instead of East US), or where the model you're trying to use isn't enabled. See [this matrix of model availability](https://aka.ms/oai/models).
-
-1. You've exceeded a quota, most often number of resources per region. See [this article on quotas and limits](https://aka.ms/oai/quotas).
-
-1. You're getting "same resource name not allowed" conflicts. That's likely because you've run the sample multiple times and deleted the resources you've been creating each time, but are forgetting to purge them. Azure keeps resources for 48 hours unless you purge from soft delete. See [this article on purging resources](https://learn.microsoft.com/azure/cognitive-services/manage-resources?tabs=azure-portal#purge-a-deleted-resource).
-
-1. You see `CERTIFICATE_VERIFY_FAILED` when the `prepdocs.py` script runs. That's typically due to incorrect SSL certificates setup on your machine. Try the suggestions in this [StackOverflow answer](https://stackoverflow.com/questions/35569042/ssl-certificate-verify-failed-with-python3/43855394#43855394).
-
-1. After running `azd up` and visiting the website, you see a '404 Not Found' in the browser. Wait 10 minutes and try again, as it might be still starting up. Then try running `azd deploy` and wait again. If you still encounter errors with the deployed app, consult these [tips for debugging Flask app deployments](http://blog.pamelafox.org/2023/06/tips-for-debugging-flask-deployments-to.html)
-and file an issue if the error logs don't help you resolve the issue.
-
-
-## Tri's notes
-Go to environment environment file at `.azure/<environment_name>/.env` and configure following variables:
-```
-AZURE_ENV_NAME=
-AZURE_LOCATION="westeurope"
-AZURE_SUBSCRIPTION_ID=
-AZURE_TENANT_ID=
-AZURE_RESOURCE_GROUP=
-AZURE_OPENAI_KEY=
-AZURE_OPENAI_SERVICE="tri-testing"
-AZURE_OPENAI_RESOURCE_GROUP=
-AZURE_OPENAI_GPT_DEPLOYMENT="tri-turbo"
-AZURE_OPENAI_CHATGPT_DEPLOYMENT="tri-turbo"
-AZURE_OPENAI_EMB_DEPLOYMENT="tri-ada"
-AZURE_FORMRECOGNIZER_SERVICE="tri-form-recog"
-AZURE_FORMRECOGNIZER_RESOURCE_GROUP=
-AZURE_SEARCH_INDEX="gptkbindex"
-AZURE_SEARCH_SERVICE="tri-search"
-AZURE_SEARCH_SERVICE_RESOURCE_GROUP=
-AZURE_STORAGE_ACCOUNT=
-AZURE_STORAGE_CONTAINER="content"
-AZURE_STORAGE_RESOURCE_GROUP=
-BACKEND_URI=
-AZURE_SEARCH_SERVICE_KEY=
-AZURE_STORAGE_ACCOUNT_KEY=
-```
-Empirically, we need to use service key to run successfully :)
-If you don't have any environment already, create one using `azd env` commands.
