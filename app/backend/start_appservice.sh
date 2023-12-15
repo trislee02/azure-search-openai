@@ -1,6 +1,6 @@
 echo "WID STARTING"
 
-echo "WID 13"
+echo "WID 12.15"
 
 echo "Checking existing node"
 

@@ -67,6 +67,7 @@ azure_credential = DefaultAzureCredential(exclude_shared_token_cache_credential 
 search_creds = azure_credential if AZURE_SEARCH_KEY == "" else AzureKeyCredential(AZURE_SEARCH_KEY)
 storage_creds = azure_credential if AZURE_STORAGE_KEY == "" else AZURE_STORAGE_KEY
 
+openai_token = None
 if OPENAI_API_KEY != "":
     openai.api_key = OPENAI_API_KEY
 else:
@@ -232,7 +233,7 @@ def chat():
 
 def ensure_openai_token():
     global openai_token
-    if openai_token.expires_on < int(time.time()) - 60:
+    if openai_token and openai_token.expires_on < int(time.time()) - 60:
         openai_token = azure_credential.get_token("https://cognitiveservices.azure.com/.default")
         openai.api_key = openai_token.token
     

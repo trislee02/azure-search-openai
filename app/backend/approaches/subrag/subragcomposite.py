@@ -132,7 +132,7 @@ Answer: {chat_content}
             
             if component.use_reranker:
                 # Use semantic L2 reranker 
-                print(f"{component.search_client._index_name} uses reranker")
+                # print(f"{component.search_client._index_name} uses reranker")
                 r = search_client.search(query_text, 
                                             query_type=QueryType.SEMANTIC, 
                                         query_language="en-us", 
@@ -144,7 +144,7 @@ Answer: {chat_content}
                                         top_k=50 if query_vector else None,
                                         vector_fields="embedding" if query_vector else None)
             else:
-                print(f"{component.search_client._index_name} does not use reranker")
+                # print(f"{component.search_client._index_name} does not use reranker")
                 is_all_reranker = False
                 r = search_client.search(query_text, 
                                             top=top, 
