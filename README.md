@@ -57,7 +57,7 @@ It will look like the following:
 
 #### Using existing resources
 
-You can create your own Azure resource and services needed. 
+You can create your own Azure resource and services needed. All services must have the tag `azd-env-name` holding the name of current environment. Additionally, Azure App Service must have one more tag `azd-service-name` holding the service name in the `azure.yml`. For instance, the service name is 'backend' then, the `azd-service-name` is 'backend'.
 
 Then, update the environment variables. Go to environment environment file at `.azure/<environment_name>/.env` and configure following variables:
 ```
@@ -85,15 +85,17 @@ OPENAI_API_VERSION=""
 
 > If you don't have any environment already, create by running
 
-`azd env new <your new environment name>`.
+```azd env new <your new environment name>```
 
-#### Deploying again
+### Preparing external data for RAG
 
-If you've only changed the backend/frontend code in the `app` folder, then you don't need to re-provision the Azure resources. You can just run:
+1. Create a directory named `data` at the root. See `sample-data` folder as a reference.
+1. Create a sub-directory for each indexes.
+1. Place document files in those sub-directories.
+1. Move to `scripts` folder. Run `cd scripts`.
+1. Run `./prepdocs.sh`
 
-```azd deploy```
-
-#### Running locally
+### Running locally
 
 1. Run `azd login`
 2. Change dir to `app`
@@ -122,3 +124,8 @@ Once in the web app:
 * Explore citations and sources
 * Click on "settings" to try different options, tweak prompts, etc.
 
+### Deploying
+
+If you've only changed the backend/frontend code in the `app` folder, then you don't need to re-provision the Azure resources. You can just run:
+
+```azd deploy```
