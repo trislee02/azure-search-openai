@@ -14,7 +14,7 @@ from core.modelhelper import get_token_limit
 
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 
-from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt, ChatMultiSearchPrompt, ChatGeneralPrompt
+from approaches.promptutils import ChatRAGPrompt, ChatVectorComparePrompt, ChatRAGCodePrompt
 from scipy.spatial.distance import cosine
 
 from approaches.checker.codechecker import CodeChecker
@@ -149,9 +149,9 @@ Answer: {chat_content}
         all_supporting_contents += f"Request: {query_text}\n{supporting_content}\n\n"
         
         # STEP 2: Generate a contextual and content specific answer using the search results and chat history
-        system_message = ChatRAGPrompt.system_message_chat_conversation
+        system_message = ChatRAGCodePrompt.system_message
 
-        user_conv = ChatRAGPrompt.user_chat_template.format(content=supporting_content, 
+        user_conv = ChatRAGCodePrompt.user_content_template.format(context=supporting_content, 
                                                             question=query_text)
         
         messages = self.get_messages_from_history(

@@ -298,14 +298,25 @@ The customer requests to schedule a meeting which should be handled by human.
         except:
             extracted_requests = chat_content.split("\n")
 
+        # Self-refining request
         # Check understandability and refine extracted requests
+        # extracted_requests, tokens = self.self_refine_request(history[-1]["user"], history_list_str, extracted_requests)
+        # tokens_count += tokens
+
+        # Check whether no questions found
+        if len(extracted_requests) == 1 and extracted_requests[0] == "0":
+            return tokens_count, []
+        return tokens_count, extracted_requests
+
+    def self_refine_request(self, message: str, history_list_str: str, extracted_requests: list[str]) -> list[str]:
+        tokens_count = 0
         for i, request in enumerate(extracted_requests):
             understandable = False # A request that is understandable has sufficient context in that.
             tries = 0
             while not understandable and tries < self.MAX_TRY_REFINE_REQUESTS:
                 if tries > 0:
                     response, tokens = self.__refine_request(request=request,
-                                                    message=history[-1]["user"],
+                                                    message=message,
                                                     chat_history=history_list_str)   
                     tokens_count += tokens
                     try:
@@ -320,11 +331,7 @@ The customer requests to schedule a meeting which should be handled by human.
                 tokens_count += tokens
                 tries += 1
             extracted_requests[i] = request
-
-        # Check whether no questions found
-        if len(extracted_requests) == 1 and extracted_requests[0] == "0":
-            return tokens_count, []
-        return tokens_count, extracted_requests
+        return extracted_requests, tokens_count
 
     def __classify_request_intent(self, request: str):
         """

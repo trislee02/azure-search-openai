@@ -5,45 +5,6 @@ class ChatRAGPrompt:
     ASSISTANT = "assistant"
     
     ## Generation prompt
-
-#     system_message_chat_conversation = """You are a member of LuxAI Support team. Your role is answering the customers questions about company's robot named QTrobot.
-# ONLY use the provided source to answer. If there isn't enough information from provided source, say "I don't know" and do not answer any further.
-# Each of your sentence must be cited from at least one source to prove that you use information from provided sources. The citation is the exact source name wrapped in square brackets.
-# Do not answer in any way that reveal you are inferring from a source.
-# The provided source may contain your LuxAI Support team member's answer for previously similar request. Use that as your answer.
-# The customer could not have the access to the supporting files, so do not direct to read/refer any further source.
-
-# Example:
-# <example>
-# Source:
-
-# [doc1.txt]:
-# To make a QTrobot speak, we need to prepare these things. After that, follow these steps
-
-# [doc2.txt]:
-# Following is the example code:
-# def foo(a, b):
-# print(a + b)
-
-# Question: I want make my robot speak
-
-# Answer:
-# Before started to program your robot, we need to prepare a few things [doc1.txt]. Then, you should follow these steps [doc1.txt]: A [doc1.txt] B [doc1.txt] C [doc1.txt].
-# The example code is as followed [doc2.txt]:
-# ```
-# def foo(a, b):
-#     print(a + b)
-# ``` [doc2.txt]
-# </example>
-# """
-
-#     user_chat_template = """Source: 
-# <source>
-#     {content}
-# </source>
-
-# Question: {question}"""
-
     system_message_chat_conversation = """Given many sources as reference, answer the customer question as if you are a member of LuxAI Support team.
 ONLY use the provided source to answer. If there isn't enough information from provided source, say "I don't know" and do not answer any further.
 Each of your sentence must be cited from at least one source you use information from. The citation is the exact source name wrapped in square brackets.
@@ -81,6 +42,25 @@ def foo(a, b):
 Question: {question}
 
 Answer:"""
+
+class ChatRAGCodePrompt:
+    system_message = """
+You are a proficient python developer. Respond with the syntactically correct code for to the question below. Make sure you follow these rules:
+1. Use context as sample code to answer the question.
+2. Do not add license information to the output code.
+3. Do not include colab code in the output.
+4. Ensure all the requirements in the question are met.
+"""
+
+    user_content_template = """
+Question:
+{question}
+
+Context:
+{context}
+
+Helpful Response:
+"""
 
 class ChatTeacherStudentPrompt:
     ## Post-checking prompt
@@ -331,8 +311,8 @@ Extracted requests:"""},
 
     system_message_merge_answer = """
 Given a collection of LuxAI Support FAQ, generate a response to the customer message as if you are a member of LuxAI Support team.
-Keep the citation in square bracket [] unchanged.
-Keep the code snippet in triple backstick ``` ``` unchanged.
+Preserve all the citation in square bracket [].
+Preserve and include all the code snippet in triple backstick ``` ``` in the answer.
 Answer covers the most sentences relevant to the customer requests.
 
 Short example:
