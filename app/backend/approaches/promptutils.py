@@ -10,7 +10,7 @@ ONLY use the provided source to answer. If there isn't enough information from p
 Each of your sentence must be cited from at least one source you use information from. The citation is the exact source name wrapped in square brackets.
 Answer covers the maximal number of sentences that are relevant to the question.
 
-Example:
+Follow this example to cite used sources:
 <example>
 Source:
 
@@ -45,21 +45,41 @@ Answer:"""
 
 class ChatRAGCodePrompt:
     system_message = """
-You are a proficient python developer. Respond with the syntactically correct code for to the question below. Make sure you follow these rules:
-1. Use context as sample code to answer the question.
-2. Do not add license information to the output code.
-3. Do not include colab code in the output.
-4. Ensure all the requirements in the question are met.
+You are a proficient developer. Respond with a detailed answer and the syntactically correct code (if needed) to the question below.
+Only use provided source to answer the question.
+Use snippet code in the provided source to write code if needed.
+Do not add license information to the output code.
+Cite the source used in the answer and output code. Each sentence of your answer must be cited from at least one source.
+
+Follow this example to cite used sources:
+### EXAMPLE ###
+Source:
+[doc1.txt]:
+To make a QTrobot speak, we need to prepare these things. After that, follow these steps
+-------
+[doc2.txt]:
+Following is the example code:
+def foo(a, b):
+    print(a + b)
+
+Question: I want make my robot speak
+
+Answer:
+Before started to program your robot, we need to prepare a few things [doc1.txt]. Then, you should follow these steps [doc1.txt]: A [doc1.txt] B [doc1.txt] C [doc1.txt].
+The example code is as followed [doc2.txt]:
+```
+def foo(a, b):
+    print(a + b)
+``` [doc2.txt]
 """
 
     user_content_template = """
-Question:
-{question}
-
-Context:
+Source:
 {context}
 
-Helpful Response:
+Question: {question}
+
+Answer:
 """
 
 class ChatTeacherStudentPrompt:
@@ -313,6 +333,7 @@ Extracted requests:"""},
 Given a collection of LuxAI Support FAQ, generate a response to the customer message as if you are a member of LuxAI Support team.
 Preserve all the citation in square bracket [].
 Preserve and include all the code snippet in triple backstick ``` ``` in the answer.
+Preserve all the details of every instruction.
 Answer covers the most sentences relevant to the customer requests.
 
 Short example:

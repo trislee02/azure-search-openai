@@ -64,5 +64,6 @@ export async function chatApi(options: ChatRequest): Promise<AskResponse> {
 }
 
 export function getCitationFilePath(citation: string): string {
-    return `http://localhost:5000/content/${citation}`;
+    if (citation.includes("https://")) return citation;
+    else return `/content/${citation}`;
 }

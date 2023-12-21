@@ -38,16 +38,30 @@ def get_code_blocks(text: str) -> dict:
 
     return matches_with_indices
 
+def generate_summary(text: str, previous_parts: str) -> str:
+    system_message = """Given the summary of the preceding parts and the complete text of the current part, write a concise introduction that links the current part to the preceding parts."""
+    content_template = """Summary of the preceding parts:
+```
+{summary_previous_parts}
+```
+The current part:
+```
+{text}
+```
+Introduction for the current part:"""
+    messages = [{"role": "system",  "content": system_message},
+                {"role": "user",    "content": content_template.format(text=text,
+                                                                        summary_previous_parts=previous_parts)}]
+
+    return utils.compute_chatcompletion(messages=messages)
+
 class MarkdownSplitter(Splitter):
     MAX_SECTION_LENGTH = 500
     SENTENCE_SEARCH_LIMIT = 100
     SECTION_OVERLAP = 0
         
-    def __init__(self, openaiapikey: str = None, openaikey: str = "", openaiservice: str = "", gptdeployment: str = ""):
-        self.openapikey = openaiapikey
-        self.openaikey = openaikey
-        self.openaiservice = openaiservice
-        self.gptdeployment = gptdeployment
+    def __init__(self):
+        ...
 
     def load(self, filename: str) -> list[Document]:
         with open(filename, "r", encoding='windows-1252') as f:
@@ -71,9 +85,9 @@ class MarkdownSplitter(Splitter):
             for part in self.__split_by_breaks(seg):
                 if summary == "":
                     document = Document(content=part[0])
-                    summary = self.__generate_summary(part[0], "")
+                    summary = generate_summary(part[0], "")
                 else:
-                    summary = self.__generate_summary(part[0], summary)
+                    summary = generate_summary(part[0], summary)
                     document = Document(content=f"{summary}\n{part[0]}")
                 splits.append(document)
                     
@@ -101,12 +115,6 @@ class MarkdownSplitter(Splitter):
         pattern = r"(?<!`)(?:^|\n)(?:#|##|###)(?![^`]*```[^`]*$)"
         segments = re.split(pattern, text, 0, re.MULTILINE)
         segments = [segment.strip() for segment in segments if segment.strip()]
-#         segments_str = "\n=============\n".join(segments)
-#         print(f"""Segments:
-# {segments_str}
-
-# *****************************
-# """)
 
         return segments
 
@@ -181,38 +189,3 @@ class MarkdownSplitter(Splitter):
             
         if start + self.SECTION_OVERLAP < end:
             yield (all_text[start:end], start)
-
-
-    def before_retry_sleep(retry_state):
-        print(f"Rate limited on the OpenAI API, sleeping before retrying...")
-        try:
-            retry_state.outcome.result()
-        except Exception as e:
-            print(e)
-
-    @retry(wait=wait_random_exponential(min=15, max=60), stop=stop_after_attempt(15), before_sleep=before_retry_sleep)
-    def __generate_summary(self, text: str, previous_parts: str) -> str:
-        system_message = """Given the summary of the preceding parts and the complete text of the current part, write a concise introduction that links the current part to the preceding parts."""
-        content_template = """Summary of the preceding parts:
-```
-{summary_previous_parts}
-```
-The current part:
-```
-{text}
-```
-Introduction for the current part:"""
-        messages = [{"role": "system",  "content": system_message},
-                    {"role": "user",    "content": content_template.format(text=text,
-                                                                           summary_previous_parts=previous_parts)}]
-
-        response = openai.ChatCompletion.create(engine=self.gptdeployment,
-                                                messages = messages,
-                                                temperature=0.7,
-                                                max_tokens=800,
-                                                top_p=0.95,
-                                                frequency_penalty=0,
-                                                presence_penalty=0,
-                                                stop=None)
-
-        return response.choices[0].message.content

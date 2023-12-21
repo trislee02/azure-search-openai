@@ -4,7 +4,7 @@ import mimetypes
 import time
 import logging
 import openai
-from flask import Flask, request, jsonify, send_file, abort
+from flask import Flask, request, jsonify, send_file, abort, redirect
 from azure.identity import DefaultAzureCredential
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
@@ -27,9 +27,11 @@ from engine.messageaction import ChatMessageAction
 AZURE_STORAGE_ACCOUNT = os.environ.get("AZURE_STORAGE_ACCOUNT") or "mystorageaccount"
 AZURE_STORAGE_CONTAINER = os.environ.get("AZURE_STORAGE_CONTAINER") or "content"
 AZURE_SEARCH_SERVICE = os.environ.get("AZURE_SEARCH_SERVICE") or "gptkb"
+
 AZURE_SEARCH_INDEX_LUXAI = os.environ.get("AZURE_SEARCH_INDEX_LUXAI") or "gptkbindex-luxai"
 AZURE_SEARCH_INDEX_EMAIL = os.environ.get("AZURE_SEARCH_INDEX_EMAIL") or "gptkbindex-email"
 AZURE_SEARCH_INDEX_CODE = os.environ.get("AZURE_SEARCH_INDEX_CODE") or "gptkbindex-code"
+AZURE_SEARCH_INDEX_REPO = os.environ.get("AZURE_SEARCH_INDEX_REPO") or "gptkbindex-repo"
 AZURE_SEARCH_INDEX_ROS = os.environ.get("AZURE_SEARCH_INDEX_ROS") or "gptkbindex-ros"
 
 KB_FIELDS_CONTENT = os.environ.get("KB_FIELDS_CONTENT") or "content"
@@ -90,7 +92,7 @@ search_client = SearchClient(
     credential=search_creds)
 search_client_code = SearchClient(
     endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
-    index_name=AZURE_SEARCH_INDEX_CODE,
+    index_name=AZURE_SEARCH_INDEX_REPO,
     credential=search_creds)
 search_client_ros = SearchClient(
     endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
@@ -190,9 +192,11 @@ def static_file(path):
 # can access all the files. This is also slow and memory hungry.
 @app.route("/content/<path>")
 def content_file(path):
+    print("HERE")
     blob = blob_container.get_blob_client(path).download_blob()
     if not blob.properties or not blob.properties.has_key("content_settings"):
-        abort(404)
+        # abort(404)
+        return redirect(path)
     mime_type = blob.properties["content_settings"]["content_type"]
     if mime_type == "application/octet-stream":
         mime_type = mimetypes.guess_type(path)[0] or "application/octet-stream"

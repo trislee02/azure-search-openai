@@ -67,11 +67,19 @@ export const Answer = ({
                         <span className={styles.citationLearnMore}>Citations:</span>
                         {parsedAnswer.citations.map((x, i) => {
                             const path = getCitationFilePath(x);
-                            return (
-                                <a key={i} className={styles.citation} title={x} onClick={() => onCitationClicked(path)}>
-                                    {`${++i}. ${x}`}
-                                </a>
-                            );
+                            if (path.startsWith("/content/")) {
+                                return (
+                                    <a key={i} className={styles.citation} title={x} onClick={() => onCitationClicked(path)}>
+                                        {`${++i}. ${x}`}
+                                    </a>
+                                );
+                            } else {
+                                return (
+                                    <a key={i} className={styles.citation} title={x} target="_blank" href={path}>
+                                        {`${++i}. ${x}`}
+                                    </a>
+                                );
+                            }
                         })}
                     </Stack>
                 </Stack.Item>

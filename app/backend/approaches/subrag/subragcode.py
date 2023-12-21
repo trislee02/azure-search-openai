@@ -121,8 +121,8 @@ Answer: {chat_content}
         retrieved_docs = []
         retrieved_doc_embeds = []
         for doc in results:
-            if use_semantic_captions:
-                doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(" . ".join([c.text for c in doc['@search.captions']]))
+            if "url" in doc.keys():
+                doc_content = f"[{doc['url']}]" + ": " + nonewlines(doc[self.content_field])
             else:
                 doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + nonewlines(doc[self.content_field])
             doc_vector = doc[self.embedding_field]
@@ -150,9 +150,12 @@ Answer: {chat_content}
         
         # STEP 2: Generate a contextual and content specific answer using the search results and chat history
         system_message = ChatRAGCodePrompt.system_message
-
         user_conv = ChatRAGCodePrompt.user_content_template.format(context=supporting_content, 
                                                             question=query_text)
+
+        # system_message = ChatRAGPrompt.system_message_chat_conversation
+        # user_conv = ChatRAGPrompt.user_chat_template.format(content=supporting_content, 
+        #                                                     question=query_text)
         
         messages = self.get_messages_from_history(
             system_message,

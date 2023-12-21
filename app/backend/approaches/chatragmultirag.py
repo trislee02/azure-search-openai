@@ -300,8 +300,8 @@ The customer requests to schedule a meeting which should be handled by human.
 
         # Self-refining request
         # Check understandability and refine extracted requests
-        # extracted_requests, tokens = self.self_refine_request(history[-1]["user"], history_list_str, extracted_requests)
-        # tokens_count += tokens
+        extracted_requests, tokens = self.self_refine_request(history[-1]["user"], history_list_str, extracted_requests)
+        tokens_count += tokens
 
         # Check whether no questions found
         if len(extracted_requests) == 1 and extracted_requests[0] == "0":
@@ -388,8 +388,8 @@ The customer requests to schedule a meeting which should be handled by human.
                 # If it is more likely to be a code-related request, then try code stores first, otherwise do the reverse.
                 if request_intent == self.RequestIntent.CODE_GENERATION:
                     # sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE_CODE])
-                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.CODE])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
                 elif request_intent == self.RequestIntent.OTHERS:
                     # sub_rags_stack.append(self.sub_rags[self.SubRAGList.EMAIL])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE_TEXT])
