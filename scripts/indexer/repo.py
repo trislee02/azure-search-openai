@@ -4,8 +4,8 @@ from indexer.indexer import Indexer
 from document.Document import Document
 from llama_index.node_parser import SentenceSplitter
 from llama_hub.github_repo import GithubRepositoryReader, GithubClient
-from lib.github import GitHubIssuesLoader
-from lib.text_splitter import SummaryRecursiveCharacterTextSplitter
+from customized_lib.github import GitHubIssuesLoader
+from customized_lib.text_splitter import SummaryRecursiveCharacterTextSplitter
 
 class GithubRepoIndexer(Indexer):
 
