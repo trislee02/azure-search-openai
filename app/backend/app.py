@@ -20,9 +20,6 @@ from approaches.chatragmultisearch import ChatRAGMultiSearchApproach
 from approaches.chatragmultirag import ChatRAGMultiRAGApproach
 from azure.storage.blob import BlobServiceClient
 
-from engine.messageclassifier import ChatMessageClassifier
-from engine.messageaction import ChatMessageAction
-
 # Replace these with your own values, either in environment variables or directly here
 AZURE_STORAGE_ACCOUNT = os.environ.get("AZURE_STORAGE_ACCOUNT") or "mystorageaccount"
 AZURE_STORAGE_CONTAINER = os.environ.get("AZURE_STORAGE_CONTAINER") or "content"
@@ -32,6 +29,7 @@ AZURE_SEARCH_INDEX_LUXAI = os.environ.get("AZURE_SEARCH_INDEX_LUXAI") or "gptkbi
 AZURE_SEARCH_INDEX_EMAIL = os.environ.get("AZURE_SEARCH_INDEX_EMAIL") or "gptkbindex-email"
 AZURE_SEARCH_INDEX_CODE = os.environ.get("AZURE_SEARCH_INDEX_CODE") or "gptkbindex-code"
 AZURE_SEARCH_INDEX_REPO = os.environ.get("AZURE_SEARCH_INDEX_REPO") or "gptkbindex-repo"
+AZURE_SEARCH_INDEX_ISSUE = os.environ.get("AZURE_SEARCH_INDEX_ISSUE") or "gptkbindex-issue"
 AZURE_SEARCH_INDEX_ROS = os.environ.get("AZURE_SEARCH_INDEX_ROS") or "gptkbindex-ros"
 
 KB_FIELDS_CONTENT = os.environ.get("KB_FIELDS_CONTENT") or "content"
@@ -90,9 +88,13 @@ search_client = SearchClient(
     endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
     index_name=AZURE_SEARCH_INDEX_LUXAI,
     credential=search_creds)
-search_client_code = SearchClient(
+search_client_repo = SearchClient(
     endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
     index_name=AZURE_SEARCH_INDEX_REPO,
+    credential=search_creds)
+search_client_issue = SearchClient(
+    endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
+    index_name=AZURE_SEARCH_INDEX_ISSUE,
     credential=search_creds)
 search_client_ros = SearchClient(
     endpoint=f"https://{AZURE_SEARCH_SERVICE}.search.windows.net",
@@ -110,7 +112,8 @@ blob_container = blob_client.get_container_client(AZURE_STORAGE_CONTAINER)
 
 search_clients = {
     "luxai": search_client,
-    "code": search_client_code,
+    "repo": search_client_repo,
+    "issue": search_client_issue,
     "ros": search_client_ros,
     "email": search_client_email
 }
@@ -192,7 +195,6 @@ def static_file(path):
 # can access all the files. This is also slow and memory hungry.
 @app.route("/content/<path>")
 def content_file(path):
-    print("HERE")
     blob = blob_container.get_blob_client(path).download_blob()
     if not blob.properties or not blob.properties.has_key("content_settings"):
         # abort(404)

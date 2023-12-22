@@ -46,7 +46,7 @@ Answer: {chat_content}
     @dataclass
     class SearchComponent:
         search_client: SearchClient
-        search_mode: str = "vectors"
+        search_mode: str = "hybrid"
         use_reranker: bool = True
 
     def __init__(self, 
@@ -113,7 +113,7 @@ Answer: {chat_content}
             vector = openai.Embedding.create(input=text, model=self.embed_model)["data"][0]["embedding"]
         return vector
 
-    def __retrieve_documents(self, query_text: str):
+    def __retrieve_documents(self, input_query_text: str):
         """
         Retrieve relevant documents
         Return:
@@ -125,14 +125,27 @@ Answer: {chat_content}
         retrieved_doc_embeds = []
         results = []
         is_all_reranker = True
-
+        
         for component in self.search_components:
             search_client = component.search_client
-            query_vector = self.__compute_embedding(query_text)
+            has_text = component.search_mode in ["text", "hybrid", None]
+            has_vector = component.search_mode in ["vectors", "hybrid", None]
+
+            # If retrieval mode includes vectors, compute an embedding for the query
+            if has_vector:
+                query_vector = self.__compute_embedding(input_query_text)
+            else:
+                query_vector = None
             
+            # Only keep the text query if the retrieval mode uses text, otherwise drop it
+            if not has_text:
+                query_text = None
+            else:
+                query_text = input_query_text
+
             if component.use_reranker:
                 # Use semantic L2 reranker 
-                # print(f"{component.search_client._index_name} uses reranker")
+                print(f"{component.search_client._index_name} uses reranker")
                 r = search_client.search(query_text, 
                                             query_type=QueryType.SEMANTIC, 
                                         query_language="en-us", 
@@ -155,7 +168,7 @@ Answer: {chat_content}
 
         results.sort(key=lambda x: x['@search.reranker_score'] if is_all_reranker else x['@search.score'], reverse=True)
 
-        for doc in results[:top]:
+        for doc in results:
             doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "\n" + nonewlines(doc[self.content_field])
             doc_vector = doc[self.embedding_field]
             
@@ -175,7 +188,7 @@ Answer: {chat_content}
             query_text = history[-1]["user"]
 
         # STEP 1: Retrieve relevant documents from the search index
-        retrieved_docs, retrieved_doc_embeds = self.__retrieve_documents(query_text=query_text)
+        retrieved_docs, retrieved_doc_embeds = self.__retrieve_documents(input_query_text=query_text)
 
         supporting_content = "\n-------\n".join(retrieved_docs)
         all_supporting_contents += f"Request: {query_text}\n{supporting_content}\n\n"

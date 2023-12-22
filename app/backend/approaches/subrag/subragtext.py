@@ -160,7 +160,6 @@ Answer: {chat_content}
             
             retrieved_docs.append(doc_content)
             retrieved_doc_embeds.append(doc_vector)
-        
         return retrieved_docs, retrieved_doc_embeds
 
     def run(self, history: Sequence[dict[str, str]], overrides: dict[str, Any], query_text: str = None) -> Any:
@@ -178,6 +177,7 @@ Answer: {chat_content}
 
         supporting_content = "\n-------\n".join(retrieved_docs)
         all_supporting_contents += f"Request: {query_text}\n{supporting_content}\n\n"
+        print(all_supporting_contents)
         
         # STEP 2: Generate a contextual and content specific answer using the search results and chat history
         system_message = ChatRAGPrompt.system_message_chat_conversation

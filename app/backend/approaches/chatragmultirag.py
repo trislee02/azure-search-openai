@@ -43,9 +43,10 @@ class ChatRAGMultiRAGApproach(Approach):
 
     class SubRAGList:
         LUXAI = "luxai"
-        CODE = "code"
+        REPO = "repo"
         ROS = "ros"
         EMAIL = "email"
+        ISSUE = "issue"
         COMPOSITE_TEXT = "composite_text"
         COMPOSITE_CODE = "composite_code"
 
@@ -92,15 +93,17 @@ The customer requests to schedule a meeting which should be handled by human.
                  ):
         super().__init__()
         
-        self.search_client_code = search_clients["code"]
+        self.search_client_repo = search_clients["repo"]
+        self.search_client_issue = search_clients["issue"]
         self.search_client_luxai = search_clients["luxai"]
         self.search_client_ros = search_clients["ros"]
         self.search_client_email = search_clients["email"]
         
         search_components_code = [SubRAGComposite.SearchComponent(search_client=self.search_client_luxai),
-                                  SubRAGComposite.SearchComponent(search_client=self.search_client_code, use_reranker=False)]
+                                  SubRAGComposite.SearchComponent(search_client=self.search_client_repo, use_reranker=False)]
         search_components_text = [SubRAGComposite.SearchComponent(search_client=self.search_client_luxai),
-                                  SubRAGComposite.SearchComponent(search_client=self.search_client_email)]
+                                  SubRAGComposite.SearchComponent(search_client=self.search_client_email),
+                                  SubRAGComposite.SearchComponent(search_client=self.search_client_issue),]
 
         self.sourcepage_field = sourcepage_field
         self.content_field = content_field
@@ -115,10 +118,21 @@ The customer requests to schedule a meeting which should be handled by human.
         self.completion_model = completion_model
 
         self.sub_rags = {
-            self.SubRAGList.CODE: SubRAGCode(search_client=self.search_client_code, 
+            self.SubRAGList.REPO: SubRAGCode(search_client=self.search_client_repo, 
                                sourcepage_field=sourcepage_field,
                                content_field=content_field,
                                embedding_field=embedding_field,
+                               chatgpt_model=chatgpt_model,
+                               embed_model=embed_model,
+                               chatgpt_deployment=chatgpt_deployment,
+                               embedding_deployment=embedding_deployment,
+                               completion_deployment=completion_deployment,
+                               completion_model=completion_model),
+            self.SubRAGList.ISSUE: SubRAGText(search_client=self.search_client_issue, 
+                               sourcepage_field=sourcepage_field,
+                               content_field=content_field,
+                               embedding_field=embedding_field,
+                               prefix_field=prefix_field,
                                chatgpt_model=chatgpt_model,
                                embed_model=embed_model,
                                chatgpt_deployment=chatgpt_deployment,
@@ -367,7 +381,7 @@ The customer requests to schedule a meeting which should be handled by human.
         thoughts = ""
         followup_message = {}
 
-        overrides["retrieval_mode"] = "vectors" # Use vectors for retrieval only. Other choices: "hybrid", "text".
+        overrides["retrieval_mode"] = "hybrid" # Use vectors for retrieval only. Choices: "hybrid", "text", "vectors"
 
         has_answer = False # Whether the LLM finds answer to respond
 
@@ -388,11 +402,12 @@ The customer requests to schedule a meeting which should be handled by human.
                 # If it is more likely to be a code-related request, then try code stores first, otherwise do the reverse.
                 if request_intent == self.RequestIntent.CODE_GENERATION:
                     # sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE_CODE])
-                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.CODE])
+                    sub_rags_stack.append(self.sub_rags[self.SubRAGList.REPO])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.LUXAI])
                 elif request_intent == self.RequestIntent.OTHERS:
                     # sub_rags_stack.append(self.sub_rags[self.SubRAGList.EMAIL])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.COMPOSITE_TEXT])
+                    # sub_rags_stack.append(self.sub_rags[self.SubRAGList.ISSUE])
                     sub_rags_stack.append(self.sub_rags[self.SubRAGList.ROS])
                 elif request_intent == self.RequestIntent.SCHEDULE_MEETING:
                     followup_message.update(self.DISCLAIMER_SCHEDULING_MEETING)
@@ -422,7 +437,7 @@ The customer requests to schedule a meeting which should be handled by human.
 
             # Combine answers to generate the final answer
             user_conv = ChatMultiSearchPrompt.user_content_merge_answer.format(customer_message=history[-1]['user'],
-                                                                            raw_answer=all_answers)
+                                                                               raw_answer=all_answers)
 
             messages = [{"role":"system","content": ChatMultiSearchPrompt.system_message_merge_answer},
                         {"role":"user","content": user_conv}]
@@ -431,7 +446,7 @@ The customer requests to schedule a meeting which should be handled by human.
                                                             temperature=ChatMultiSearchPrompt.temperature_merge_answer, 
                                                             max_tokens=self.chatgpt_token_limit, 
                                                             n=1)
-                    
+            
             tokens_count += count_tokens(chat_completion)
             final_answer = chat_completion.choices[0].message.content
 

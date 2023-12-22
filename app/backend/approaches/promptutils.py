@@ -331,7 +331,7 @@ Extracted requests:"""},
 
     system_message_merge_answer = """
 Given a collection of LuxAI Support FAQ, generate a response to the customer message as if you are a member of LuxAI Support team.
-Preserve all the citation in square bracket [].
+Preserve and include all the citation content in square bracket [].
 Preserve and include all the code snippet in triple backstick ``` ``` in the answer.
 Preserve all the details of every instruction.
 Answer covers the most sentences relevant to the customer requests.
