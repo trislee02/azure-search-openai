@@ -89,11 +89,19 @@ OPENAI_API_VERSION=""
 
 ### Preparing external data for RAG
 
+#### Offline documents
+
 1. Create a directory named `data` at the root. See `sample-data` folder as a reference.
 1. Create a sub-directory for each indexes.
 1. Place document files in those sub-directories.
 1. Move to `scripts` folder. Run `cd scripts`.
 1. Run `./prepdocs.sh`
+
+#### Online documents (Github Repo and Issues)
+
+1. Create a configuration YAML file to set params for initializing Indexer instances. See `config.sample-yml` file as a reference.
+1. Move to `scripts` folder. Run `cd scripts`.
+1. Run `./preponlinedocs.sh`.
 
 ### Running locally
 
