@@ -5,7 +5,8 @@ azure-ai-formrecognizer==3.2.1
 azure-storage-blob==12.14.1
 openai==1.1.0
 tenacity==8.2.2
-langchain
+langchain==0.0.352
 llama-index==0.9.19
 llama-hub
 python-dotenv
+pyyaml

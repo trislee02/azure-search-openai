@@ -148,3 +148,6 @@ static/
 
 # data
 data*/
+
+# yaml
+*.yml

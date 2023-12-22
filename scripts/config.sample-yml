@@ -1,0 +1,11 @@
+repo:
+  index_name: 
+  githubtoken: 
+  owner: 
+  repo: 
+  branch: 
+issues:
+  index_name: 
+  githubtoken: 
+  repo: 
+  include_prs: False

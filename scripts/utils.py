@@ -1,8 +1,12 @@
 import re
 import os
+import hashlib
 import base64
 from tenacity import retry, stop_after_attempt, wait_random_exponential, wait_fixed
 from openai import AzureOpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 AZURE_OPENAI_GPT_DEPLOYMENT = os.environ.get("AZURE_OPENAI_GPT_35_DEPLOYMENT") or ""
 AZURE_OPENAI_EMB_DEPLOYMENT = os.environ.get("AZURE_OPENAI_EMB_DEPLOYMENT") or ""
@@ -42,4 +46,9 @@ def compute_chatcompletion(messages: list, temperature: float = 0.7) -> str:
                                                             presence_penalty=0,
                                                             stop=None)
     
-    return response['choices'][0]['message']['content']
+    return response.choices[0].message.content
+
+def url_to_hash(url: str) -> str:
+    data = url.encode()
+    sha256_hash = hashlib.sha256(data).hexdigest()
+    return sha256_hash
