@@ -62,6 +62,11 @@ You can create your own Azure resource and services needed. All services must ha
 Then, update the environment variables. Go to environment environment file at `.azure/<environment_name>/.env` and configure following variables:
 ```
 AZURE_ENV_NAME=""
+AZURE_LOCATION=""
+AZURE_SUBSCRIPTION_ID=""
+AZURE_TENANT_ID=""
+AZURE_RESOURCE_GROUP=""
+
 AZURE_STORAGE_ACCOUNT=""
 AZURE_STORAGE_ACCOUNT_KEY=""
 AZURE_STORAGE_CONTAINER=""
@@ -72,8 +77,10 @@ AZURE_SEARCH_INDEX_LUXAI=""
 AZURE_SEARCH_INDEX_CODE=""
 AZURE_SEARCH_INDEX_ROS=""
 AZURE_SEARCH_INDEX_EMAIL=""
+AZURE_SEARCH_INDEX_REPO=""
+AZURE_SEARCH_INDEX_ISSUE=""
 
-# AZURE_OPENAI_KEY=""
+AZURE_OPENAI_KEY=""
 AZURE_OPENAI_SERVICE=""
 AZURE_OPENAI_GPT_35_DEPLOYMENT=""
 AZURE_OPENAI_CHATGPT_35_DEPLOYMENT=""
@@ -81,6 +88,8 @@ AZURE_OPENAI_CHATGPT_35_MODEL=""
 AZURE_OPENAI_EMB_DEPLOYMENT=""
 
 OPENAI_API_VERSION=""
+
+BACKEND_URI = ""
 ```
 
 > If you don't have any environment already, create by running
