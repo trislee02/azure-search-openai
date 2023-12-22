@@ -168,7 +168,7 @@ Answer: {chat_content}
 
         results.sort(key=lambda x: x['@search.reranker_score'] if is_all_reranker else x['@search.score'], reverse=True)
 
-        for doc in results:
+        for doc in results[:top]:
             doc_content = f"[{doc[self.sourcepage_field]}]" + ": " + "\n" + nonewlines(doc[self.content_field])
             doc_vector = doc[self.embedding_field]
             
